@@ -1,0 +1,175 @@
+{
+  "app_name": "TeeBox",
+  "personality": "4 Tactile / Playful LIGHT",
+  "personality_one_liner": "A bold, friendly, and welcoming golf community that feels tactile, social, and deeply connected to the course.",
+  "color": {
+    "surface": "#FDFCF8",
+    "onSurface": "#1A1D1C",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1D1C",
+    "surfaceTertiary": "#F2F1E8",
+    "onSurfaceTertiary": "#4B5563",
+    "surfaceInverse": "#132A1C",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#15803D",
+    "brandPrimary": "#15803D",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#D97706",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#DCFCE7",
+    "onBrandTertiary": "#14532D",
+    "success": "#16A34A",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#DC2626",
+    "onError": "#FFFFFF",
+    "info": "#0369A1",
+    "onInfo": "#FFFFFF",
+    "border": "#E4E3DB",
+    "borderStrong": "#BDBBAE",
+    "divider": "#E4E3DB"
+  },
+  "typography": {
+    "displayFontFamily": "Figtree",
+    "textFontFamily": "Nunito",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous spacing. Chunky cards with oversized tap areas. Cards never flush to screen edge; always at least md margin. Controlled asymmetry and floating playful modules.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 2,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar when content scrolls behind it",
+      "Sticky headers over scrolling content",
+      "Floating action buttons or primary CTA floating containers",
+      "Featured cards with frosted glass overlay on background photos"
+    ],
+    "dont's": [
+      "Form fields",
+      "Body text regions",
+      "Every single list row"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth",
+      "purpose": "Welcoming entry point for golfers to sign up or log in.",
+      "states": {
+        "loading": "Spinner centrally aligned.",
+        "empty": "N/A",
+        "error": "Readable inline form errors or toast for failed login."
+      },
+      "layout": "Hero image covering the top 40% with a vertical gradient scrim fading into surface color at the bottom. Playful, chunky inputs with soft borders. Large pill-shaped primary button."
+    },
+    {
+      "name": "Home",
+      "purpose": "Activity feed of rounds, photos, and comments from fellow golfers.",
+      "states": {
+        "loading": "Skeleton loaders mimicking scorecard shapes.",
+        "empty": "Illustration of an empty golf green with text 'No rounds yet. Follow friends or go play!' and a primary CTA to discover.",
+        "error": "Error message with 'Retry connection' button."
+      },
+      "layout": "Scrollable list of thick, tactile cards. Each card displays user info, course name, total score, an attached photo (with bottom gradient scrim and overlayed score data), and action buttons (like, comment). Glass header."
+    },
+    {
+      "name": "Log Round",
+      "purpose": "Form to input scorecard details, course info, notes, and photos.",
+      "states": {
+        "loading": "Spinner centered over the form while saving.",
+        "empty": "Default form state.",
+        "error": "Toast for missing required fields."
+      },
+      "layout": "Single-column scrollable layout with large form inputs. A section for attaching photos with image previews. Sticky 'Save Round' CTA at the bottom inside KeyboardAvoidingView with safe-area bottom padding. This screen must support receiving initial params via Share Intent (course name, score array, etc.)."
+    },
+    {
+      "name": "Post Detail",
+      "purpose": "Detailed view of a round with full scorecard stats and comment thread.",
+      "states": {
+        "loading": "Spinner centered.",
+        "empty": "No comments yet message in comment list.",
+        "error": "Failed to load post message with retry."
+      },
+      "layout": "Hero image from the post at top, stats layered below in pill modules. A distinct, visually structured scorecard summary (grid). Bottom area features a scrolling comment thread with a fixed bottom input bar for adding comments."
+    },
+    {
+      "name": "User Profile",
+      "purpose": "Displays golfer stats, handicap, and their round history.",
+      "states": {
+        "loading": "Skeleton UI for stats and feed.",
+        "empty": "Zero rounds played message with an illustration.",
+        "error": "Load failure message with retry."
+      },
+      "layout": "Profile cover image with gradient scrim and avatar slightly overlapping the content below (asymmetrical tactile feel). Bold typography for Handicap and Total Rounds. Horizontal scroll for recent courses, vertical list for past rounds."
+    },
+    {
+      "name": "Discover",
+      "purpose": "Search and explore new courses and golfers to follow.",
+      "states": {
+        "loading": "Spinner in list area.",
+        "empty": "Type to search courses and golfers.",
+        "error": "Search failed message."
+      },
+      "layout": "Sticky glass search bar at top. Segmented control (pill style) to switch between 'Golfers' and 'Courses'. Results are chunky rows with initials/avatars or course photo thumbnails (with brandTertiary tint containers)."
+    }
+  ],
+  "images": {
+    "auth_hero": {
+      "url": "https://images.unsplash.com/photo-1629673120178-53a664eec9e8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHwxfHxmcmllbmRzJTIwcGxheWluZyUyMGdvbGYlMjBjb3Vyc2UlMjBzbWlsaW5nfGVufDB8fHx8MTc4MzIwNDk4OXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Friends playing golf and smiling on a sunny day"
+    },
+    "empty_feed": {
+      "url": "https://images.unsplash.com/photo-1517074009205-d9ca5d8b4a63?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGdvbGYlMjBncmVlbiUyMGZsYWclMjBob2xlfGVufDB8fHx8MTc4MzIwNDk4OXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Empty golf green with red flag at sunset"
+    },
+    "course_thumbnail_1": {
+      "url": "https://images.unsplash.com/photo-1592937238247-cd0090e02f65?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwxfHxmYW1vdXMlMjBiZWF1dGlmdWwlMjBnb2xmJTIwY291cnNlJTIwbGFuZHNjYXBlfGVufDB8fHx8MTc4MzIwNDk4OXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Beautiful green golf course landscape"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Follow the '4 Tactile / Playful LIGHT' personality tightly. Avoid flat lists; instead, use chunky, soft-rounded cards (radius lg or pill), thick tap areas (min 44pt), and playful layout grouping (like stacked or asymmetric modules).",
+    "Ensure 'Log Round' screen acts as a potential target for the Share Intent handler. It must accept pre-filled params seamlessly via navigation route params or deep link payload.",
+    "For all images that feature text overlay (e.g. photos attached to a round on the Home feed, or Profile banners), mandate a 3-stop vertical gradient scrim (transparent to >=70% surfaceInverse) to guarantee text legibility.",
+    "Implement glassmorphism on the bottom tab bar and sticky headers. Verify that scrolling content underneath remains legible but abstracted.",
+    "Do not use generic blue colors anywhere in the app. Strict reliance on the provided golf-inspired warm off-white and fairway green palette.",
+    "Include tactile haptic feedback on major actions: Save Round, Like Post, Tab Switches, and Form Submissions.",
+    "Do NOT use any emojis in the system UI.",
+    "Avoid standard unstyled React Native components; wrap inputs, cards, and buttons with the tactile styling system (e.g., shadow tier 2, Pill shapes, clear foreground/background layering)."
+  ]
+}
