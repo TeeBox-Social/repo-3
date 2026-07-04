@@ -1,22 +1,42 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "TeeBox",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "teebox",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.teebox.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Attach photos to your round posts",
+        "NSCameraUsageDescription": "Attach photos to your round posts",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["teebox"]
+          }
+        ]
+      }
     },
     "android": {
+      "package": "com.teebox.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#15803D"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["READ_MEDIA_IMAGES"],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [{ "scheme": "teebox" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -25,13 +45,15 @@
     },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
+      "expo-image-picker",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#132A1C"
         }
       ]
     ],
