@@ -40,6 +40,14 @@ A dedicated social community for golfers: log rounds, share course reviews, and 
 - `POST /api/courses/reviews` — `rating` is now `float` in [1.0, 5.0]; server rounds to nearest 0.25.
 - `GET /api/courses/{name}/reviews` — each review's `author` now includes `handicap`.
 
+## Iteration 4 — Security audit remediation
+- **SEC-001 (Critical)** JWT secret rotated to 96-char random hex; server refuses to boot when `JWT_SECRET_KEY` is <32 chars or contains any of `change_me / changeme / placeholder / changethis / your-secret`.
+- **SEC-002 (Medium)** Email field stripped from EVERY public user response (`/discover/users`, `/users/{id}`, feed / rounds / comments / reviews author payloads). `/auth/me` still returns the caller's own email since they own it.
+- **SEC-003 (Medium)** Photo payloads capped at ~1 MB base64 each, avatars at ~600 KB, and rounds are hard-capped at 3 photos. Non-image data URIs rejected with 415.
+- **SEC-004 (Medium)** All user-supplied search queries fed to Mongo `$regex` are now (a) length-capped at 60 chars and (b) meta-char-escaped, blocking ReDoS and pattern surprises like `.*`.
+- **SEC-005 (Low)** Demo seed (both the manual `POST /api/seed` endpoint and the on-empty-DB startup autopull) is gated behind `ENABLE_DEMO_SEED` (`true` in dev, `false` for production deploys). When off, `POST /api/seed` returns 404 and no demo users are created.
+- Verified end-to-end by testing agent: 28/28 backend pytests + frontend regression on Feed / Post Detail / Discover / Course Detail all passing.
+
 ## Tech
 - **Backend**: FastAPI + MongoDB (motor). JWT via python-jose. Bcrypt password hashing via passlib.
 - **Frontend**: Expo SDK 54 + expo-router file-based routing. React Native only. `expo-image`, `expo-linear-gradient`, `expo-blur`, `@expo/vector-icons` (Ionicons), `expo-image-picker` (base64 photos), `expo-secure-store`.
