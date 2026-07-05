@@ -1,0 +1,41 @@
+{
+  "summary": "TeeBox security-audit remediation validated end-to-end. All 28 pytest cases pass (SEC-001..005 + regressions). Frontend regressions verified via Playwright on mobile viewport: sign-in with reese@teebox.demo works, Feed renders, Post Detail comments incl. @mentions work, Course Detail shows star picker + filter chips + all-rounds + reviews, Discover shows master courses with city/region. SEC-005 also verified directly (POST /api/seed returns 404 with ENABLE_DEMO_SEED=false via in-process TestClient).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking but should be migrated. Reference: emitted from RN Web on / and /sign-in screens."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking. Reference: emitted after Sign in click."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_audit.py",
+    "/app/test_reports/pytest/iter5_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate remaining shadow* / pointerEvents style props to boxShadow / style.pointerEvents to silence RN Web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "SEC-001 guard correctly refuses boot on short/placeholder secrets (verified by dynamic re-import).",
+    "SEC-002: enrich_round/get_comments/get_reviews/discover_users/get_user all project out email; /auth/me still returns caller's own email as expected.",
+    "SEC-003: photos truncated to first 3 (photos[:MAX_PHOTOS_PER_ROUND]); oversized photo -> 413; non-image data URI -> 415; oversized avatar in PATCH /auth/me -> 413.",
+    "SEC-004: _safe_query escapes . * + ? ^ $ { } ( ) | [ ] \\ and truncates to 60 chars before $regex. Verified '.*' returns [] for both /discover/users and /discover/courses.",
+    "SEC-005: POST /api/seed returns 404 when ENABLE_DEMO_SEED=false; startup auto-seed also gated. With flag=true, endpoint idempotent (returns seeded:false when users exist).",
+    "server.py is 794 lines — over 700-line guideline. Consider splitting into routers/ per resource in a future refactor (non-blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_security_audit.py (new)",
+    "/app/test_reports/iteration_5.json (this report)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "100% of tested flows (sign-in, feed, discover-golfers, discover-courses, course-detail, post-detail w/ comments)"},
+  "seed_data_creation": "No new seed. Existing dev auto-seed (ENABLE_DEMO_SEED=true) still populates demo users/rounds/courses. Test data (TEST_* rounds/reviews/user) created during pytest — most transient rounds deleted; a few TEST_review_course reviews and one TEST_ user remain but are prefixed TEST_ for easy cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "SEC-001..005 all pass. Backend test suite lives at /app/backend/tests/test_security_audit.py (28 cases, ~4s). Run: EXPO_BACKEND_URL=<public-url> pytest backend/tests/test_security_audit.py -v. Note: TestSEC001 dynamically re-imports server.py with bad JWT_SECRET_KEY — it restores the original env after the test, but if you add tests that also touch sys.modules['server'], run those first.",
+  "rca_of_issue": "N/A — no bugs found. Two initial test failures were bugs in the test itself: (1) EmailStr rejected the reserved '.test' TLD, changed to '.dev'. (2) The 4.63 rating expectation was mathematically wrong — round(4.63*4)=19 → 4.75, not 4.5; changed input to 4.6 which correctly rounds to 4.5."
+}

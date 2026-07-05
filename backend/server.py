@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
@@ -34,6 +35,42 @@ courses_col = db.courses
 SECRET_KEY = os.environ["JWT_SECRET_KEY"]
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 EXPIRE_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
+ENABLE_DEMO_SEED = os.environ.get("ENABLE_DEMO_SEED", "false").lower() in ("1", "true", "yes")
+
+# SEC-001: refuse to boot with a placeholder secret
+_placeholder_tokens = ("change_me", "changeme", "placeholder", "changethis", "your-secret")
+if len(SECRET_KEY) < 32 or any(tok in SECRET_KEY.lower() for tok in _placeholder_tokens):
+    raise RuntimeError(
+        "JWT_SECRET_KEY is missing, too short, or looks like a placeholder. "
+        "Set a strong random value (>= 32 chars, no 'change_me'/'placeholder' text) in the environment."
+    )
+
+# SEC-003: base64 payload caps (bytes of base64 string, not decoded)
+MAX_PHOTO_B64_LEN = 1_500_000   # ~1 MB decoded
+MAX_AVATAR_B64_LEN = 800_000     # ~600 KB decoded
+MAX_PHOTOS_PER_ROUND = 3
+
+def _validate_b64_image(s: Optional[str], max_len: int, label: str) -> None:
+    if s is None:
+        return
+    if not isinstance(s, str) or len(s) > max_len:
+        raise HTTPException(status_code=413, detail=f"{label} too large")
+    # Accept only data:image URIs or raw base64 (loose check — we don't decode)
+    if s.startswith("data:") and not s.startswith("data:image/"):
+        raise HTTPException(status_code=415, detail=f"{label} must be an image data URI")
+
+# SEC-004: escape regex meta chars & cap query length for Mongo $regex
+_regex_meta = re.compile(r"[.*+?^${}()|\[\]\\]")
+
+def _safe_query(q: str, max_len: int = 60) -> str:
+    q = (q or "").strip()[:max_len]
+    return _regex_meta.sub(lambda m: "\\" + m.group(0), q)
+
+# SEC-002: fields never returned for other users
+_PUBLIC_USER_KEYS = {"id", "display_name", "handicap", "home_course", "bio", "avatar", "created_at"}
+
+def public_user(u: dict) -> dict:
+    return {k: v for k, v in (u or {}).items() if k in _PUBLIC_USER_KEYS}
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -114,7 +151,7 @@ class ProfileUpdate(BaseModel):
 
 # ---- Helpers ----
 async def enrich_round(r: dict, viewer_id: Optional[str]) -> dict:
-    author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0})
+    author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0, "email": 0})
     like_count = await likes_col.count_documents({"round_id": r["id"]})
     comment_count = await comments_col.count_documents({"round_id": r["id"]})
     liked_by_me = False
@@ -179,6 +216,8 @@ async def me(user=Depends(get_current_user)):
 @api_router.patch("/auth/me")
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     updates = {k: v for k, v in data.dict().items() if v is not None}
+    if "avatar" in updates:
+        _validate_b64_image(updates["avatar"], MAX_AVATAR_B64_LEN, "Avatar")
     if updates:
         await users_col.update_one({"id": user["id"]}, {"$set": updates})
     fresh = await users_col.find_one({"id": user["id"]}, {"_id": 0, "hashed_password": 0})
@@ -187,6 +226,10 @@ async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
 # ---- Rounds ----
 @api_router.post("/rounds")
 async def create_round(data: RoundIn, user=Depends(get_current_user)):
+    # SEC-003: cap photo count & size
+    photos = (data.photos or [])[:MAX_PHOTOS_PER_ROUND]
+    for p in photos:
+        _validate_b64_image(p, MAX_PHOTO_B64_LEN, "Photo")
     round_id = str(uuid.uuid4())
     doc = {
         "id": round_id,
@@ -200,7 +243,7 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         "greens_in_regulation": data.greens_in_regulation,
         "putts": data.putts,
         "notes": data.notes or "",
-        "photos": data.photos or [],
+        "photos": photos,
         "weather": data.weather,
         "hole_scores": data.hole_scores or [],
         "hole_pars": data.hole_pars or [],
@@ -309,7 +352,7 @@ async def add_comment(round_id: str, data: CommentIn, user=Depends(get_current_u
 # ---- Users / Profiles ----
 @api_router.get("/users/{user_id}")
 async def get_user(user_id: str, user=Depends(get_current_user)):
-    target = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
+    target = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0, "email": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     round_count = await rounds_col.count_documents({"user_id": user_id})
@@ -323,7 +366,7 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
     if user["id"] != user_id:
         following = await follows_col.find_one({"user_id": user["id"], "target_id": user_id}) is not None
     return {
-        **target,
+        **public_user(target),
         "round_count": round_count,
         "avg_score": avg_score,
         "best_score": best,
@@ -392,23 +435,24 @@ async def toggle_follow(user_id: str, user=Depends(get_current_user)):
 @api_router.get("/discover/users")
 async def discover_users(q: str = "", user=Depends(get_current_user)):
     query = {}
-    if q.strip():
-        query = {"display_name": {"$regex": q.strip(), "$options": "i"}}
+    safe = _safe_query(q)
+    if safe:
+        query = {"display_name": {"$regex": safe, "$options": "i"}}
     users = []
-    async for u in users_col.find(query, {"_id": 0, "hashed_password": 0}).limit(30):
+    async for u in users_col.find(query, {"_id": 0, "hashed_password": 0, "email": 0}).limit(30):
         if u["id"] == user["id"]:
             continue
         round_count = await rounds_col.count_documents({"user_id": u["id"]})
-        users.append({**u, "round_count": round_count})
+        users.append({**public_user(u), "round_count": round_count})
     return users
 
 @api_router.get("/discover/courses")
 async def discover_courses(q: str = "", user=Depends(get_current_user)):
-    q_str = q.strip()
+    safe = _safe_query(q)
     # Aggregate rounds by course
     pipeline = []
-    if q_str:
-        pipeline.append({"$match": {"course_name": {"$regex": q_str, "$options": "i"}}})
+    if safe:
+        pipeline.append({"$match": {"course_name": {"$regex": safe, "$options": "i"}}})
     pipeline += [
         {"$group": {
             "_id": "$course_name",
@@ -424,8 +468,8 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
 
     # Master course list
     course_query: dict = {}
-    if q_str:
-        course_query = {"name": {"$regex": q_str, "$options": "i"}}
+    if safe:
+        course_query = {"name": {"$regex": safe, "$options": "i"}}
     master = [c async for c in courses_col.find(course_query, {"_id": 0}).limit(100)]
 
     seen = set()
@@ -490,7 +534,7 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
 async def get_reviews(course_name: str, user=Depends(get_current_user)):
     out = []
     async for r in reviews_col.find({"course_name": course_name}, {"_id": 0}).sort("created_at", -1):
-        author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0})
+        author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0, "email": 0})
         out.append({
             **r,
             "author": {
@@ -605,6 +649,9 @@ async def import_courses_osm(
 # ---- Seed demo data (idempotent) ----
 @api_router.post("/seed")
 async def seed():
+    # SEC-005: never callable when demo seeding disabled
+    if not ENABLE_DEMO_SEED:
+        raise HTTPException(status_code=404, detail="Not found")
     # Only seed if empty
     if await users_col.count_documents({}) > 0:
         return {"seeded": False, "reason": "already has users"}
@@ -733,11 +780,11 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def on_startup():
-    # Auto-seed if empty for smooth demo
-    if await users_col.count_documents({}) == 0:
+    # SEC-005: only auto-seed demo data when explicitly enabled (dev / demo)
+    if ENABLE_DEMO_SEED and await users_col.count_documents({}) == 0:
         try:
             await seed()
-            logger.info("Auto-seeded demo data")
+            logger.info("Auto-seeded demo data (ENABLE_DEMO_SEED=true)")
         except Exception as e:
             logger.warning(f"seed failed: {e}")
 
