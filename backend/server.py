@@ -320,8 +320,10 @@ async def me(user=Depends(get_current_user)):
 
 @api_router.patch("/auth/me")
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
-    updates = {k: v for k, v in data.dict().items() if v is not None}
-    if "avatar" in updates:
+    # exclude_unset=True preserves explicit nulls (e.g. clearing handicap)
+    # while still ignoring omitted fields.
+    updates = data.dict(exclude_unset=True)
+    if "avatar" in updates and updates["avatar"] is not None:
         _validate_b64_image(updates["avatar"], MAX_AVATAR_B64_LEN, "Avatar")
     if updates:
         await users_col.update_one({"id": user["id"]}, {"$set": updates})

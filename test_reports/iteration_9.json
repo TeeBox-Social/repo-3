@@ -1,0 +1,31 @@
+{
+  "summary": "Iter9 verifies the PATCH /api/auth/me null-clear fix (server.py:325 now uses data.dict(exclude_unset=True)). Backend: 16/16 pytest cases PASS across new test_iter9_null_clears.py (6 cases) and full iter8 regression test_iter8_profile.py (10 cases). Primary fix confirmed: PATCH {'handicap': null} clears handicap and subsequent GET returns null; PATCH {'handicap': 8.4} restores; PATCH {'bio': 'x'} (omitting handicap) preserves handicap; explicit null also clears bio, home_course, and avatar; oversized avatar (>800k b64) still returns 413. All iter8 regressions still green (pin/unpin owner-only, stale-pin auto-clear, /users/{id}/friends shape+sort, reese stats round_count=2/avg_score=80.5/courses_played=2/friends_count=2). Frontend: mobile Playwright (390x844) logs in as reese, confirms 'Reese Callahan · 8.4 HCP' rendered initially, opens Edit, clears the handicap TextInput, taps Save, returns to profile — '· 8.4 HCP' is gone and no 'HCP' substring appears anywhere on the profile; UI then restored handicap to 8.4 via the same editor and the '· 8.4 HCP' badge reappears. Reese seed state restored (handicap=8.4, bio/home_course untouched) both by autouse pytest fixture teardown and by the UI restore step.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_null_clears.py",
+    "/app/backend/tests/test_iter8_profile.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:321-331 (update_me) — fix is correct. `data.dict(exclude_unset=True)` preserves explicit-null semantics for all clearable fields (bio, home_course, handicap, avatar) while omitted keys are untouched. The `avatar is not None` guard before size validation is preserved so a null avatar bypasses _validate_b64_image, which is the right behaviour.",
+    "Consider migrating from Pydantic v1 `.dict()` to `.model_dump(exclude_unset=True)` in future to stay compatible with Pydantic v2 semantics — not blocking, current call still works because passlib/fastapi pin Pydantic v1-compatible API."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_null_clears.py (new — 6 pytest cases covering the fix + regressions)",
+    "/app/test_reports/pytest/iter9_results.xml (junit, 16/16 pass)",
+    "/app/test_reports/iteration_9.json (this report)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (end-to-end handicap-clear + restore verified in mobile viewport)"},
+  "seed_data_creation": "No net data change. Iter9 tests transiently mutated reese's bio/home_course/handicap/avatar and restored via autouse fixture teardown to seed defaults (handicap=8.4, bio='Weekend warrior. Always chasing the sunrise tee time.', home_course='Pebble Meadows GC', avatar=null). UI test also restored handicap back to 8.4 after the clear demonstration. Confirmed post-run via profile screenshot showing '· 8.4 HCP' present.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter9 primary fix is landed and fully verified. If any future work touches ProfileUpdate/PATCH /auth/me, re-run `pytest /app/backend/tests/test_iter9_null_clears.py /app/backend/tests/test_iter8_profile.py -v` to catch any regression on the exclude_unset semantics or the avatar size cap.",
+  "rca_of_issue": "Pre-fix RCA (already documented in iteration_8.json): the previous server.py used `updates = {k: v for k, v in data.dict().items() if v is not None}`, which conflated 'field omitted from request body' and 'field explicitly set to null' because Pydantic v1's .dict() serialises all model fields with their default (None). Fix: switch to `data.dict(exclude_unset=True)` so only fields the client actually included survive, preserving explicit nulls for `$set`. Verified via curl: `PATCH /api/auth/me {'handicap': null}` -> 200 with body handicap=null, subsequent GET returns handicap=null; `PATCH {'bio': 'x'}` alone leaves handicap intact."
+}
