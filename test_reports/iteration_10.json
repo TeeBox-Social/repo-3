@@ -1,0 +1,50 @@
+{
+  "summary": "Iter10 verifies post-audit remediation for SEC-102 (profile field caps), P3 wishlist cap (200 → 413), and P3 atomic refresh-rotation. 20/21 pytest cases PASS. ONE MEDIUM remediation gap remains: PATCH /api/auth/me {'display_name': null} still returns 200 and null-clears display_name because ProfileUpdate.display_name = Optional[str] with min_length=1 — Pydantic v1's min_length is not applied to a None value, and iter9's `data.dict(exclude_unset=True)` then writes `display_name: None` to Mongo. This is exactly the injection the friends-endpoint defensive `.lower()` guard is defending against; the guard works (SEC-102-friend-guard passes with poisoned Mongo doc), but the display_name should be non-nullable at the API surface. All other SEC-102 caps (empty string → 422, >40 chars → 422, bio >280 → 422, handicap out of [-10,54] → 422, home_course >120 → 422) work correctly. Wishlist cap is enforced (adds 200, 201st → 413) and existing duplicate/delete/check semantics still correct. Atomic refresh rotation: concurrent double-refresh returns exactly [200,401] with 'reuse detected' family revoke — passes cleanly here but observed as intermittently flaky under isolated repeated runs (see rca_of_issue). All iter5–iter9 regressions green: register/login, refresh happy path, logout, pin (403 non-owner, 404 unknown, 200 owner), unpin (DELETE /users/me/pin), friends shape/sort, 4-stat profile row, PATCH null-clear on handicap/bio/home_course/avatar, avatar 413, wishlist add/dup/delete/check. Poisoned Mongo doc inserted for the friends-guard test was cleaned up in the same test's finally block; Reese seed state restored to display_name='Reese Callahan', handicap=8.4, home_course='Pebble Meadows GC', bio original, avatar=null.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/auth/me",
+        "issue": "SEC-102 remediation gap: `{'display_name': null}` returns 200 and clears display_name to null (verified twice against live backend). Field is declared `Optional[str] = Field(default=None, min_length=1, max_length=40)` (server.py:205) — Pydantic v1 skips min_length validation when the value is None. Combined with iter9's `data.dict(exclude_unset=True)` (server.py:332), an authenticated client can null out its own display_name, which then propagates to friends lists, feed authors, comments, mentions, discover, achievements, etc. The friends endpoint's defensive `.lower()` guard (server.py:550) currently prevents a 500, but every UI surface that displays display_name will now render 'null'/'unknown'/blank.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/refresh (concurrent)",
+        "issue": "SEC-108 atomic-rotation has a small TOCTOU window: after the loser's find_one_and_update returns None it runs `update_many({family_id}, is_revoked: True)`, but the winner's `create_refresh_token` insert can land AFTER that update, so the winner's freshly-issued refresh_token can survive the family revoke. Observed intermittently in repeated runs (statuses [200,401] correct, but subsequent refresh with the winner's new token returned 200 in one of ~5 runs instead of the spec-required 401 'family revoked'). Fix: after minting the new refresh, re-check `is_revoked` for the family and revoke the newly-inserted jti if the family is already compromised, or perform the whole rotate+insert inside a Mongo session/transaction so the loser's revoke covers it."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_security_remediation.py",
+    "/app/test_reports/pytest/iter10_results.xml"
+  ],
+  "action_items": [
+    "Fix SEC-102 display_name null-clear: change ProfileUpdate.display_name to a non-Optional / non-nullable form, OR add an explicit validator that rejects None (e.g. `@validator('display_name') def _no_null(cls, v): if v is None: raise ValueError('display_name required'); return v`), OR pop `display_name` from updates when the value is None in update_me(). After fix, PATCH {'display_name': null} must return 422 and GET /auth/me must still show the previous non-null display_name.",
+    "Harden SEC-108 atomic refresh: either wrap the rotate + new-token insert in a Mongo transaction/session, or (simpler) after `create_refresh_token(user_id, family_id=family_id)` re-read the family and if any member has is_revoked=True, revoke the just-inserted jti and raise 401. Add a test that fires 5+ concurrent refreshes and asserts no orphan un-revoked token survives.",
+    "Optional: consider migrating ProfileUpdate to Pydantic v2 semantics (model_dump(exclude_unset=True)) and use `NonEmptyStr` type for display_name so min_length is validated even when None is passed."
+  ],
+  "critical_code_review_comments": [
+    "server.py:205 — `display_name: Optional[str] = Field(default=None, min_length=1, max_length=40)` is contradictory: Optional allows None but min_length=1 implies required. Pydantic v1 does not apply min_length to None, so the field is effectively nullable. This is the root cause of the SEC-102 display_name gap.",
+    "server.py:293-305 — atomic-rotate implementation uses `find_one_and_update` correctly for the winner/loser split, but the family revoke happens BEFORE the winner inserts its new refresh in create_refresh_token(). Any concurrent scheduler that runs the loser's update_many before the winner's insert leaves the new refresh un-revoked. Consider using an explicit ordering: winner should insert the new refresh, THEN re-check the family state, or wrap in a session.",
+    "server.py:527-551 — friends endpoint defensive `.lower()` guard at line 550 (`(x.get('display_name') or '').lower()`) is correct and passes with a poisoned Mongo doc, BUT this is defence-in-depth; the primary defence (rejecting null display_name at write time) is missing.",
+    "server.py:644-646 — wishlist cap check runs BEFORE dedup check, so a user at 200 items who tries to re-add an existing course gets 413 instead of the friendlier 'already on wishlist' — minor UX quirk, not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_security_remediation.py (new — 21 pytest cases)",
+    "/app/test_reports/pytest/iter10_results.xml (junit, 20 pass / 1 fail)",
+    "/app/test_reports/iteration_10.json (this report)"
+  ],
+  "success_rate": {"backend": "95% (20/21)", "frontend": "n/a (backend-only review requested)"},
+  "seed_data_creation": "Test-only data created: several throwaway users with email prefix TEST_iter10_* for register/login/logout/wishlist-cap tests (~9 rows) and their wishlist entries (~600 rows) — all deleted after the run via a cleanup script. The poisoned null-display_name user inserted by TestSEC102FriendsGuard is deleted inside the test's finally block (verified: post-run scan for id LIKE 'TEST_iter10_poison_%' returned 0 rows). Reese seed state restored to display_name='Reese Callahan', handicap=8.4, home_course='Pebble Meadows GC', bio='Weekend warrior. Always chasing the sunrise tee time.', avatar=null via autouse fixture teardown + final manual restore.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Two remediation gaps require main-agent code fixes then retest: (1) reject/ignore null display_name in PATCH /auth/me — retest with `pytest backend/tests/test_iter10_security_remediation.py::TestSEC102DisplayName -v` and confirm the null path returns 422 (or ignores) and GET keeps prior non-null value. (2) SEC-108 atomic refresh family revoke is racy — run the concurrent test 5–10 times to confirm r3 (retry with winner's new refresh) always returns 401 after fix. Reese/Jordan/Sam seed accounts and DB are clean; no residual test data.",
+  "rca_of_issue": "SEC-102 display_name RCA — Pydantic v1 skips string length validators (min_length/max_length) when the incoming value is None because `Optional[str]` short-circuits to a valid None before validators run. server.py declares `display_name: Optional[str] = Field(default=None, min_length=1, max_length=40)`, which is only enforced for non-None strings. Iter9 changed update_me() to `data.dict(exclude_unset=True)` so a client-supplied `\"display_name\": null` produces `{'display_name': None}` in the update dict, which is then written to Mongo via `$set: {display_name: null}`. Reproduction: `curl -X PATCH ${BASE}/api/auth/me -H 'Authorization: Bearer <reese_token>' -d '{\"display_name\": null}'` → 200 and GET returns display_name=null. Mitigation: add an explicit validator or drop-null guard in update_me() (see action_items). SEC-108 refresh race RCA — winner path: (a) find_one_and_update rotates jti, (b) create_refresh_token inserts new jti with is_revoked=False. Loser path: (a) find_one_and_update returns None, (b) update_many(family, is_revoked=True). If loser (b) runs between winner (a) and winner (b), the new jti bypasses the revoke. Reproduction: run the atomic test 5 times back to back — 1 in ~5 shows r3 returning 200 instead of 401. Mitigation: wrap winner's rotate+insert in a Mongo session, or re-check family revoke state after the insert."
+}

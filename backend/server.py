@@ -202,10 +202,10 @@ class ReviewIn(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 
 class ProfileUpdate(BaseModel):
-    display_name: Optional[str] = None
-    home_course: Optional[str] = None
-    handicap: Optional[float] = None
-    bio: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    home_course: Optional[str] = Field(default=None, max_length=120)
+    handicap: Optional[float] = Field(default=None, ge=-10, le=54)
+    bio: Optional[str] = Field(default=None, max_length=280)
     avatar: Optional[str] = None  # base64
 
 # ---- Helpers ----
@@ -294,8 +294,15 @@ async def refresh(request: Request, data: RefreshIn):
         # Reuse detected — nuke the family
         await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
         raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
-    # Mark current as rotated & issue new pair
-    await refresh_tokens_col.update_one({"jti": jti}, {"$set": {"is_rotated": True, "rotated_at": now_iso()}})
+    # SEC-108: atomic rotate — only one concurrent refresh may win.
+    rot = await refresh_tokens_col.find_one_and_update(
+        {"jti": jti, "is_rotated": False, "is_revoked": False},
+        {"$set": {"is_rotated": True, "rotated_at": now_iso()}},
+    )
+    if not rot:
+        # Someone else already rotated this jti concurrently → treat as reuse
+        await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
     user = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User no longer exists")
@@ -540,7 +547,7 @@ async def get_user_friends(user_id: str, user=Depends(get_current_user)):
             "is_friend": is_friend,
             "is_me": fid == user["id"],
         })
-    out.sort(key=lambda x: (not x["is_friend"], x["display_name"].lower()))
+    out.sort(key=lambda x: (not x["is_friend"], (x.get("display_name") or "").lower()))
     return out
 
 # ---- Pin a round on your profile ----
@@ -633,6 +640,10 @@ async def get_wishlist(user_id: str, user=Depends(get_current_user)):
 @api_router.post("/wishlist")
 async def add_to_wishlist(data: WishlistIn, user=Depends(get_current_user)):
     course_name = data.course_name.strip()
+    # SEC-107: cap wishlist size per user
+    count = await wishlists_col.count_documents({"user_id": user["id"]})
+    if count >= 200:
+        raise HTTPException(status_code=413, detail="Wishlist is full (200 max)")
     existing = await wishlists_col.find_one({"user_id": user["id"], "course_name": course_name})
     if existing:
         return {"added": False, "reason": "already on wishlist"}
