@@ -308,6 +308,19 @@ async def refresh(request: Request, data: RefreshIn):
         raise HTTPException(status_code=401, detail="User no longer exists")
     new_access = create_access_token(user_id)
     new_refresh = await create_refresh_token(user_id, family_id=family_id)
+    # SEC-108 hardening: guard against a race where the family was revoked
+    # (by a concurrent reuse-detect) between our rotate + insert. If so,
+    # revoke the newly-issued refresh so it can't be spent.
+    family_state = await refresh_tokens_col.find_one(
+        {"family_id": family_id, "is_revoked": True},
+        {"_id": 0, "is_revoked": 1},
+    )
+    if family_state:
+        await refresh_tokens_col.update_many(
+            {"family_id": family_id},
+            {"$set": {"is_revoked": True}},
+        )
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
     return {"access_token": new_access, "refresh_token": new_refresh, "user": user}
 
 @api_router.post("/auth/logout")
@@ -330,6 +343,13 @@ async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     # exclude_unset=True preserves explicit nulls (e.g. clearing handicap)
     # while still ignoring omitted fields.
     updates = data.dict(exclude_unset=True)
+    # SEC-102 hardening: display_name is a required identity field and must never be null/empty.
+    # (Optional[str] + min_length skips None in Pydantic v1, so guard here.)
+    if "display_name" in updates:
+        v = updates["display_name"]
+        if v is None or not str(v).strip():
+            raise HTTPException(status_code=422, detail="display_name cannot be empty")
+        updates["display_name"] = str(v).strip()
     if "avatar" in updates and updates["avatar"] is not None:
         _validate_b64_image(updates["avatar"], MAX_AVATAR_B64_LEN, "Avatar")
     if updates:

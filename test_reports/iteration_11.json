@@ -1,0 +1,34 @@
+{
+  "summary": "Iter11 verifies the two remediation gaps identified in iter10 (SEC-102 null display_name + SEC-108 concurrent-refresh race). 24/24 pytest cases PASS. SEC-102: PATCH /api/auth/me now rejects display_name=null, display_name='', display_name='   ' (whitespace-only) with 422 + detail 'display_name cannot be empty', and trims '  Reese Callahan  ' → 'Reese Callahan' on 200. Omitting the display_name key does NOT touch the field (verified via bio-only patch keeping display_name unchanged). SEC-108: 10 consecutive iterations of double-refresh with the same refresh_token all satisfied the invariant — when the race produced [200,401], the winner's new refresh_token was ALSO revoked (r3 = 401 'reuse detected'); when no race triggered ([200,200]) the winner's new token remained usable (r3 = 200). No iteration ended with a compromised family still yielding a usable refresh token. Regressions verified: register+login, refresh happy-path, logout revoke, wishlist add/dup/delete, friends shape, null-clear on handicap/bio/home_course/avatar, avatar 413. Final cleanup ran (test_zz_final_restore_reese) — reese seed restored to display_name='Reese Callahan', handicap=8.4, home_course='Pebble Meadows GC', bio='Weekend warrior. Always chasing the sunrise tee time.', avatar=null. Zero TEST_iter11_* users remain in DB. Backend code fixes reviewed at server.py:346-352 (display_name null/empty/whitespace guard + trim) and server.py:311-323 (post-insert family_state re-check that revokes the winner's new refresh if the family was nuked concurrently).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_sec_remediation.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:346-352 — explicit display_name guard is correct: `if v is None or not str(v).strip(): raise 422` and trims to `str(v).strip()`. Sits AFTER `exclude_unset=True` so it never fires on omitted keys. Good.",
+    "server.py:311-323 — SEC-108 post-mint family_state re-check queries `{family_id, is_revoked: True}` after `create_refresh_token`. If any sibling in the family is revoked, it marks the whole family revoked and raises 401. This closes the TOCTOU window (loser's update_many runs between winner's rotate + insert). One micro-nit: the extra `update_many` on line 319-322 is redundant if the loser's revoke already covered every member — but it's cheap and defensive, no harm.",
+    "server.py:204-209 — ProfileUpdate still declares `display_name: Optional[str] = Field(default=None, min_length=1, max_length=40)`. The Optional-with-min_length contradiction is unchanged, but the explicit guard in update_me() now enforces the intent. Optional cosmetic cleanup: consider dropping `min_length=1` from the field to reflect that validation actually happens in the endpoint, OR migrate to Pydantic v2 where NonEmptyStr can be enforced at model level."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_sec_remediation.py (new — 24 pytest cases, 10 parametrized concurrent-refresh iterations)",
+    "/app/test_reports/pytest/iter11_results.xml (junit, 24 pass / 0 fail)",
+    "/app/test_reports/iteration_11.json (this report)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "n/a (backend-only)"},
+  "seed_data_creation": "Test-only data created during this run: 1 throwaway user with email TEST_iter11_reg_* for register/login regression. Auto-cleaned — post-run DB scan for TEST% users returned 0 rows. Reese/Jordan/Sam seed accounts unchanged. Reese seed state restored via autouse fixture + explicit final restore test to display_name='Reese Callahan', handicap=8.4, home_course='Pebble Meadows GC', bio='Weekend warrior. Always chasing the sunrise tee time.', avatar=null.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter11 remediation is COMPLETE. Both SEC-102 (display_name null/empty/whitespace guard + trim) and SEC-108 (concurrent-refresh post-insert family re-check) are landing correctly and holding across 10 consecutive iterations. No follow-up retest required for these two gaps. Test file at /app/backend/tests/test_iter11_sec_remediation.py can be reused for regression on the next iter. Rate-limit note: /auth/login is 10/min so the concurrent-refresh test uses 8s spacing between iterations and rotates across the 3 demo accounts — do not reduce spacing without also increasing the rate-limit or the run will 429.",
+  "rca_of_issue": "Both iter10 gaps root-caused and closed in iter11: (1) SEC-102 null clear — was Pydantic v1 short-circuiting min_length for None values combined with exclude_unset=True writing {display_name: null} to Mongo. Fixed by adding an explicit guard in update_me() that inspects `updates['display_name']` and raises 422 if None or whitespace-only, and trims otherwise (server.py:346-352). Verified: PATCH null → 422, PATCH '' → 422, PATCH '   ' → 422, PATCH '  Reese Callahan  ' → 200 stored as 'Reese Callahan', PATCH without the key → unchanged. (2) SEC-108 refresh race — winner's create_refresh_token insert could land AFTER a concurrent loser's family-wide `update_many({family_id}, is_revoked:True)`, leaving the winner's new jti with is_revoked=False. Fixed by re-checking the family for any revoked member immediately after the insert; if any exists, marks the family revoked again and raises 401 (server.py:311-323). Verified: 10 consecutive iterations of concurrent double-refresh — every iteration where the race produced [200,401] had r3 (retry with winner's new token) return 401, and every iteration with no race had r3 return 200. Zero iterations ended with an orphaned usable refresh_token in a compromised family."
+}
