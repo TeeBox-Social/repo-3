@@ -162,6 +162,7 @@ function UserRow({ user, onPress }: { user: any; onPress: () => void }) {
 }
 
 function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
+  const location = [course.city, course.region].filter(Boolean).join(', ');
   return (
     <Pressable testID={`discover-course-${course.course_name}`} onPress={onPress} style={styles.courseRow}>
       <Image
@@ -170,16 +171,26 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
         contentFit="cover"
       />
       <View style={styles.courseBody}>
-        <Text style={styles.rowTitle}>{course.course_name}</Text>
-        <Text style={styles.rowSub}>
-          {course.play_count} plays
+        <Text style={styles.rowTitle} numberOfLines={1}>{course.course_name}</Text>
+        {location ? (
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={11} color={colors.muted} />
+            <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.rowSub} numberOfLines={1}>
+          {course.play_count > 0
+            ? `${course.play_count} play${course.play_count > 1 ? 's' : ''}`
+            : 'Not played yet'}
           {course.avg_score != null ? ` · Avg ${course.avg_score}` : ''}
           {course.best_score != null ? ` · Best ${course.best_score}` : ''}
         </Text>
-        {course.avg_rating ? (
+        {course.avg_rating != null ? (
           <View style={styles.ratingPill}>
             <Ionicons name="star" size={11} color={colors.brandSecondary} />
-            <Text style={styles.ratingText}>{course.avg_rating} · {course.review_count} reviews</Text>
+            <Text style={styles.ratingText}>
+              {Number(course.avg_rating).toFixed(2)} · {course.review_count} reviews
+            </Text>
           </View>
         ) : null}
       </View>
@@ -258,6 +269,8 @@ const styles = StyleSheet.create({
   },
   courseImg: { width: 70, height: 70, borderRadius: radius.md, backgroundColor: colors.brandTertiary },
   courseBody: { flex: 1, gap: 2 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  locationText: { fontSize: 12, color: colors.muted, fontWeight: '600', flex: 1 },
   ratingPill: {
     flexDirection: 'row',
     alignItems: 'center',

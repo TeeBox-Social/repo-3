@@ -28,6 +28,7 @@ likes_col = db.likes
 comments_col = db.comments
 follows_col = db.follows
 reviews_col = db.course_reviews
+courses_col = db.courses
 
 # Auth config
 SECRET_KEY = os.environ["JWT_SECRET_KEY"]
@@ -101,7 +102,7 @@ class CommentIn(BaseModel):
 
 class ReviewIn(BaseModel):
     course_name: str
-    rating: int = Field(ge=1, le=5)
+    rating: float = Field(ge=1.0, le=5.0)
     text: str = Field(min_length=1, max_length=1000)
 
 class ProfileUpdate(BaseModel):
@@ -403,9 +404,11 @@ async def discover_users(q: str = "", user=Depends(get_current_user)):
 
 @api_router.get("/discover/courses")
 async def discover_courses(q: str = "", user=Depends(get_current_user)):
+    q_str = q.strip()
+    # Aggregate rounds by course
     pipeline = []
-    if q.strip():
-        pipeline.append({"$match": {"course_name": {"$regex": q.strip(), "$options": "i"}}})
+    if q_str:
+        pipeline.append({"$match": {"course_name": {"$regex": q_str, "$options": "i"}}})
     pipeline += [
         {"$group": {
             "_id": "$course_name",
@@ -414,29 +417,73 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
             "best_score": {"$min": "$total_score"},
             "last_photo": {"$last": {"$arrayElemAt": ["$photos", 0]}},
         }},
-        {"$sort": {"play_count": -1}},
-        {"$limit": 30},
     ]
-    out = []
+    round_agg = {}
     async for c in rounds_col.aggregate(pipeline):
-        review_count = await reviews_col.count_documents({"course_name": c["_id"]})
-        avg_rating_cursor = reviews_col.aggregate([
-            {"$match": {"course_name": c["_id"]}},
-            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
-        ])
+        round_agg[c["_id"]] = c
+
+    # Master course list
+    course_query: dict = {}
+    if q_str:
+        course_query = {"name": {"$regex": q_str, "$options": "i"}}
+    master = [c async for c in courses_col.find(course_query, {"_id": 0}).limit(100)]
+
+    seen = set()
+    out = []
+    # Master first, enriched with any round agg
+    for m in master:
+        name = m["name"]
+        seen.add(name)
+        r = round_agg.get(name)
+        review_count = await reviews_col.count_documents({"course_name": name})
         avg_rating = None
-        async for x in avg_rating_cursor:
-            avg_rating = round(x["avg"], 1)
+        async for x in reviews_col.aggregate([
+            {"$match": {"course_name": name}},
+            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+        ]):
+            avg_rating = round(x["avg"], 2)
         out.append({
-            "course_name": c["_id"],
-            "play_count": c["play_count"],
-            "avg_score": round(c["avg_score"], 1) if c["avg_score"] else None,
-            "best_score": c["best_score"],
-            "last_photo": c.get("last_photo"),
+            "course_name": name,
+            "city": m.get("city"),
+            "region": m.get("region"),
+            "country": m.get("country"),
+            "lat": m.get("lat"),
+            "lng": m.get("lng"),
+            "play_count": r["play_count"] if r else 0,
+            "avg_score": round(r["avg_score"], 1) if r and r["avg_score"] else None,
+            "best_score": r["best_score"] if r else None,
+            "last_photo": r.get("last_photo") if r else None,
             "review_count": review_count,
             "avg_rating": avg_rating,
         })
-    return out
+    # Any played courses not in master list, append after
+    for name, r in round_agg.items():
+        if name in seen:
+            continue
+        review_count = await reviews_col.count_documents({"course_name": name})
+        avg_rating = None
+        async for x in reviews_col.aggregate([
+            {"$match": {"course_name": name}},
+            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+        ]):
+            avg_rating = round(x["avg"], 2)
+        out.append({
+            "course_name": name,
+            "city": None,
+            "region": None,
+            "country": None,
+            "lat": None,
+            "lng": None,
+            "play_count": r["play_count"],
+            "avg_score": round(r["avg_score"], 1) if r["avg_score"] else None,
+            "best_score": r["best_score"],
+            "last_photo": r.get("last_photo"),
+            "review_count": review_count,
+            "avg_rating": avg_rating,
+        })
+    # Sort: played first (desc play_count), then master (alphabetical)
+    out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
+    return out[:60]
 
 # ---- Course Reviews ----
 @api_router.get("/courses/{course_name}/reviews")
@@ -450,23 +497,110 @@ async def get_reviews(course_name: str, user=Depends(get_current_user)):
                 "id": author.get("id"),
                 "display_name": author.get("display_name"),
                 "avatar": author.get("avatar"),
+                "handicap": author.get("handicap"),
             } if author else None,
         })
     return out
 
+@api_router.get("/courses/{course_name}")
+async def get_course(course_name: str, user=Depends(get_current_user)):
+    """Return course metadata (from master list) merged with rounds/reviews stats."""
+    course = await courses_col.find_one({"name": course_name}, {"_id": 0})
+    play_count = await rounds_col.count_documents({"course_name": course_name})
+    review_count = await reviews_col.count_documents({"course_name": course_name})
+    avg_rating = None
+    async for x in reviews_col.aggregate([
+        {"$match": {"course_name": course_name}},
+        {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+    ]):
+        avg_rating = round(x["avg"], 2)
+    return {
+        "course_name": course_name,
+        "city": course.get("city") if course else None,
+        "region": course.get("region") if course else None,
+        "country": course.get("country") if course else None,
+        "lat": course.get("lat") if course else None,
+        "lng": course.get("lng") if course else None,
+        "play_count": play_count,
+        "review_count": review_count,
+        "avg_rating": avg_rating,
+    }
+
 @api_router.post("/courses/reviews")
 async def create_review(data: ReviewIn, user=Depends(get_current_user)):
+    # Round to nearest 0.25 to keep data tidy
+    rating = round(data.rating * 4) / 4
+    rating = max(1.0, min(5.0, rating))
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "course_name": data.course_name.strip(),
-        "rating": data.rating,
+        "rating": rating,
         "text": data.text.strip(),
         "created_at": now_iso(),
     }
     await reviews_col.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+# ---- OSM import ----
+@api_router.post("/courses/import-osm")
+async def import_courses_osm(
+    bbox: str = Query(..., description="south,west,north,east — e.g. 32.5,-117.5,33.5,-116.5"),
+    user=Depends(get_current_user),
+):
+    """Bulk-import golf course names + locations from OpenStreetMap Overpass API (free, no key)."""
+    try:
+        parts = [float(p) for p in bbox.split(",")]
+        if len(parts) != 4:
+            raise ValueError("bbox must have 4 numbers")
+        south, west, north, east = parts
+    except Exception:
+        raise HTTPException(status_code=400, detail="bbox must be 'south,west,north,east'")
+
+    import httpx
+    query = f"""
+    [out:json][timeout:30];
+    (
+      node["leisure"="golf_course"]({south},{west},{north},{east});
+      way["leisure"="golf_course"]({south},{west},{north},{east});
+      relation["leisure"="golf_course"]({south},{west},{north},{east});
+    );
+    out center tags;
+    """
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as http:
+            resp = await http.post("https://overpass-api.de/api/interpreter", data={"data": query})
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OSM Overpass error: {e}")
+
+    inserted = 0
+    for el in data.get("elements", []):
+        tags = el.get("tags", {}) or {}
+        name = (tags.get("name") or "").strip()
+        if not name:
+            continue
+        # Skip duplicates
+        if await courses_col.find_one({"name": name}):
+            continue
+        lat = el.get("lat") if el.get("type") == "node" else (el.get("center", {}) or {}).get("lat")
+        lng = el.get("lon") if el.get("type") == "node" else (el.get("center", {}) or {}).get("lon")
+        await courses_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "city": tags.get("addr:city"),
+            "region": tags.get("addr:state") or tags.get("addr:region"),
+            "country": tags.get("addr:country"),
+            "lat": lat,
+            "lng": lng,
+            "source": "osm",
+            "created_at": now_iso(),
+        })
+        inserted += 1
+    total = await courses_col.count_documents({})
+    return {"inserted": inserted, "total_courses": total}
 
 # ---- Seed demo data (idempotent) ----
 @api_router.post("/seed")
@@ -531,7 +665,54 @@ async def seed():
                 "target_id": b,
                 "created_at": now_iso(),
             })
-    return {"seeded": True, "users": len(demo_users), "rounds": len(demo_rounds)}
+
+    # Master course catalog (real courses, name + location only)
+    catalog = [
+        ("Pebble Beach Golf Links", "Pebble Beach", "CA", "USA", 36.5686, -121.9494),
+        ("Cypress Point Club", "Pebble Beach", "CA", "USA", 36.5811, -121.9739),
+        ("Augusta National Golf Club", "Augusta", "GA", "USA", 33.5030, -82.0199),
+        ("TPC Sawgrass — Stadium Course", "Ponte Vedra Beach", "FL", "USA", 30.1970, -81.3910),
+        ("Bethpage State Park — Black Course", "Farmingdale", "NY", "USA", 40.7431, -73.4553),
+        ("Torrey Pines — South Course", "La Jolla", "CA", "USA", 32.9012, -117.2470),
+        ("Pinehurst No. 2", "Pinehurst", "NC", "USA", 35.1899, -79.4726),
+        ("Chambers Bay", "University Place", "WA", "USA", 47.2018, -122.5691),
+        ("Whistling Straits — Straits Course", "Kohler", "WI", "USA", 43.8511, -87.7264),
+        ("The Ocean Course at Kiawah Island", "Kiawah Island", "SC", "USA", 32.6083, -80.0439),
+        ("TPC Harding Park", "San Francisco", "CA", "USA", 37.7245, -122.4930),
+        ("Bandon Dunes", "Bandon", "OR", "USA", 43.1836, -124.4054),
+        ("Pacific Dunes", "Bandon", "OR", "USA", 43.1968, -124.4108),
+        ("Streamsong Blue", "Bowling Green", "FL", "USA", 27.6572, -81.9214),
+        ("Erin Hills", "Erin", "WI", "USA", 43.2439, -88.3417),
+        ("Shinnecock Hills Golf Club", "Southampton", "NY", "USA", 40.9040, -72.4415),
+        ("Winged Foot — West Course", "Mamaroneck", "NY", "USA", 40.9583, -73.7500),
+        ("Oakmont Country Club", "Oakmont", "PA", "USA", 40.5300, -79.8386),
+        ("Muirfield Village Golf Club", "Dublin", "OH", "USA", 40.1408, -83.1650),
+        ("Hazeltine National Golf Club", "Chaska", "MN", "USA", 44.8534, -93.6250),
+        ("Congressional Country Club", "Bethesda", "MD", "USA", 39.0104, -77.1717),
+        ("Merion Golf Club — East Course", "Ardmore", "PA", "USA", 40.0055, -75.3005),
+        ("Riviera Country Club", "Pacific Palisades", "CA", "USA", 34.0475, -118.5069),
+        ("Medinah Country Club — No. 3", "Medinah", "IL", "USA", 41.9736, -88.0525),
+        ("Oak Hill Country Club — East Course", "Rochester", "NY", "USA", 43.1372, -77.5300),
+        ("Bay Hill Club & Lodge", "Orlando", "FL", "USA", 28.4600, -81.5133),
+        ("St Andrews Links — Old Course", "St Andrews", "Fife", "Scotland", 56.3438, -2.8010),
+        ("Royal County Down Golf Club", "Newcastle", "County Down", "Northern Ireland", 54.2200, -5.8830),
+        ("Old Head Golf Links", "Kinsale", "County Cork", "Ireland", 51.6083, -8.5361),
+        ("Royal Melbourne Golf Club — West", "Black Rock", "VIC", "Australia", -37.9647, 145.0322),
+    ]
+    for name, city, region, country, lat, lng in catalog:
+        await courses_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "city": city,
+            "region": region,
+            "country": country,
+            "lat": lat,
+            "lng": lng,
+            "source": "seed",
+            "created_at": now_iso(),
+        })
+
+    return {"seeded": True, "users": len(demo_users), "rounds": len(demo_rounds), "courses": len(catalog)}
 
 # Mount router
 app.include_router(api_router)

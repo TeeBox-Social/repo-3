@@ -87,6 +87,7 @@ export const api = {
   discoverCourses: (q: string) => request<any[]>(`/discover/courses?q=${encodeURIComponent(q)}`),
   courseReviews: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/reviews`),
   courseRounds: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/rounds`),
+  courseInfo: (name: string) => request<any>(`/courses/${encodeURIComponent(name)}`),
   createReview: (payload: { course_name: string; rating: number; text: string }) =>
     request<any>('/courses/reviews', { method: 'POST', body: JSON.stringify(payload) }),
 };
