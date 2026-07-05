@@ -25,6 +25,14 @@ A dedicated social community for golfers: log rounds, share course reviews, and 
 ## Growth Enhancement (Business Angle)
 - **Course Ambassador program** — the golfer with the highest avg star-rating on a course is auto-featured on the course detail. Encourages high-quality reviews and creates a shareable badge (drives referrals to the app). Ready to layer on top of `/api/courses/{name}/reviews`.
 
+## Iteration 2 additions
+- **Log tab icon** normalized to standard `add-circle-outline` (matches sibling tabs, no floating pill).
+- **Hole-by-hole scorecard** — Log Round: toggle-revealed 18-hole grid, auto-sums into total score. Post Detail: read-only color-coded grid (birdie / par / bogey / double).
+- **Mentions in comments** — `@name` autocomplete driven by `/api/discover/users`, tap to insert `@Display_Name`, rendered in brand green inside the comment. Web caret handled declaratively (no `setNativeProps` crash).
+- **Followers-only feed** — Home feed uses `GET /api/feed?scope=followers` (default). No "All" toggle in Home. "All rounds here" section only appears inside Course Detail (via `GET /api/courses/{name}/rounds`).
+- **Achievements & badges** — computed on the fly per user: On the tee, Broke 100/90, First sub-80, Sub-70 club, Regular (10 rounds), Half-century (50 rounds), Course collector (5 courses), Hot streak (3 rounds ≤ 80 in a row).
+- **Seed** now creates mutual follows across the 3 demo users so the followers-only feed is populated on first launch.
+
 ## Tech
 - **Backend**: FastAPI + MongoDB (motor). JWT via python-jose. Bcrypt password hashing via passlib.
 - **Frontend**: Expo SDK 54 + expo-router file-based routing. React Native only. `expo-image`, `expo-linear-gradient`, `expo-blur`, `@expo/vector-icons` (Ionicons), `expo-image-picker` (base64 photos), `expo-secure-store`.
