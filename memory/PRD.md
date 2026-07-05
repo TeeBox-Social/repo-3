@@ -46,7 +46,16 @@ A dedicated social community for golfers: log rounds, share course reviews, and 
 - **SEC-003 (Medium)** Photo payloads capped at ~1 MB base64 each, avatars at ~600 KB, and rounds are hard-capped at 3 photos. Non-image data URIs rejected with 415.
 - **SEC-004 (Medium)** All user-supplied search queries fed to Mongo `$regex` are now (a) length-capped at 60 chars and (b) meta-char-escaped, blocking ReDoS and pattern surprises like `.*`.
 - **SEC-005 (Low)** Demo seed (both the manual `POST /api/seed` endpoint and the on-empty-DB startup autopull) is gated behind `ENABLE_DEMO_SEED` (`true` in dev, `false` for production deploys). When off, `POST /api/seed` returns 404 and no demo users are created.
-- Verified end-to-end by testing agent: 28/28 backend pytests + frontend regression on Feed / Post Detail / Discover / Course Detail all passing.
+
+## Iteration 5 — Hardening + Wishlist
+- **Rate limiting** via `slowapi`: `/auth/login` = 10/min · 60/hour, `/auth/register` = 5/min · 20/hour, `/auth/refresh` = 60/min. Key function is proxy-aware — prefers `cf-connecting-ip` → `x-forwarded-for` → socket peer, so limits actually bind per real client behind Cloudflare / ingress.
+- **CORS from env**: `CORS_ALLOWED_ORIGINS` (comma-separated). `*` in dev; set to your web origin in prod.
+- **Short-lived access + rotating refresh tokens** — access = 15 min, refresh = 30 days. Refresh tokens tracked in `refresh_tokens` collection with `jti / family_id / is_rotated / is_revoked`. Every refresh mints a new pair and marks the old one rotated. **Reuse of a rotated refresh nukes the whole family** (compromised-device signal). TTL index expires records past `exp`. `/auth/logout` server-revokes the refresh. Access-token type-claim guards prevent using a refresh token as a bearer.
+- **Frontend refresh flow** — `src/api.ts` transparently handles 401s: single-flight refresh queue (concurrent 401s only issue ONE refresh), swap in new access, replay the original request. On refresh failure the auth-context is notified via `setOnAuthLost` and the user returns to sign-in.
+- **Wishlist** — per-user list of courses to play.
+  - `POST /api/wishlist { course_name }`, `DELETE /api/wishlist/{course_name}`, `GET /api/wishlist/check/{course_name}`, `GET /api/users/{id}/wishlist`.
+  - `GET /api/users/{id}` now returns `wishlist_count`.
+  - Frontend: `WishlistButton` toggle pill next to "Open in Maps" on Course Detail; horizontal-scroll wishlist section on own Profile (with × remove) and read-only version on another user's profile.
 
 ## Tech
 - **Backend**: FastAPI + MongoDB (motor). JWT via python-jose. Bcrypt password hashing via passlib.

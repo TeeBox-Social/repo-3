@@ -133,7 +133,8 @@ class TestRateLimit:
         # Uses shell curl to reuse TCP connection & match the auth-playbook
         # verification pattern. Fires 30 rapid requests; with 10/minute the
         # bucket should trip.
-        import subprocess, time
+        import subprocess
+        import time
         time.sleep(60)  # drain bucket from previous tests
         cmd = "; ".join(
             [f'curl -s -o /dev/null -w "%{{http_code}} " -X POST '
@@ -149,7 +150,9 @@ class TestRateLimit:
 
     def test_register_rate_limited(self):
         # /api/auth/register is 5/minute — much lower ceiling, easier to hit.
-        import subprocess, time, uuid as _uuid
+        import subprocess
+        import time
+        import uuid as _uuid
         time.sleep(60)
         cmd = "; ".join(
             [f'curl -s -o /dev/null -w "%{{http_code}} " -X POST '

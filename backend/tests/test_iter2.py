@@ -39,7 +39,6 @@ def test_seed_demo_users_and_mutual_follows(demo_token):
     assert "jordan@teebox.demo" in demo_emails
     assert "sam@teebox.demo" in demo_emails
     # Reese should be following jordan & sam per seed
-    r_me = requests.get(f"{API}/auth/me", headers=H(demo_token), timeout=15).json()
     for u in users:
         if u["email"] in ("jordan@teebox.demo", "sam@teebox.demo"):
             prof = requests.get(f"{API}/users/{u['id']}", headers=H(demo_token), timeout=15).json()
