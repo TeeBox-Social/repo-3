@@ -145,6 +145,10 @@ export const api = {
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),
   getUserAchievements: (id: string) => request<{ total: number; achievements: any[] }>(`/users/${id}/achievements`),
   getUserWishlist: (id: string) => request<any[]>(`/users/${id}/wishlist`),
+  getUserFriends: (id: string) => request<any[]>(`/users/${id}/friends`),
+  pinRound: (roundId: string) =>
+    request<{ pinned: boolean; round_id: string }>(`/rounds/${roundId}/pin`, { method: 'POST' }),
+  unpinRound: () => request<{ pinned: boolean }>(`/users/me/pin`, { method: 'DELETE' }),
   addWishlist: (course_name: string) =>
     request<{ added: boolean }>('/wishlist', { method: 'POST', body: JSON.stringify({ course_name }) }),
   removeWishlist: (course_name: string) =>

@@ -19,15 +19,19 @@ import { colors, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { MentionInput } from '@/src/components/MentionInput';
 import { HoleGrid } from '@/src/components/HoleGrid';
+import { useAuth } from '@/src/auth-context';
 
 export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const [round, setRound] = useState<any>(null);
   const [comments, setComments] = useState<any[] | null>(null);
   const [text, setText] = useState('');
   const [mentions, setMentions] = useState<string[]>([]);
   const [posting, setPosting] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -35,8 +39,15 @@ export default function PostDetail() {
       const [r, c] = await Promise.all([api.getRound(String(id)), api.getComments(String(id))]);
       setRound(r);
       setComments(c);
+      // Check if this round is the user's pinned round
+      if (user && r.author?.id === user.id) {
+        try {
+          const me = await api.getUser(user.id);
+          setPinned(me?.pinned_round?.id === r.id);
+        } catch {}
+      }
     } catch {}
-  }, [id]);
+  }, [id, user]);
 
   useEffect(() => {
     load();
@@ -68,6 +79,24 @@ export default function PostDetail() {
     } catch {
     } finally {
       setPosting(false);
+    }
+  };
+
+  const togglePin = async () => {
+    if (!round || pinLoading) return;
+    setPinLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      if (pinned) {
+        await api.unpinRound();
+        setPinned(false);
+      } else {
+        await api.pinRound(round.id);
+        setPinned(true);
+      }
+    } catch {
+    } finally {
+      setPinLoading(false);
     }
   };
 
@@ -115,6 +144,23 @@ export default function PostDetail() {
                 <Ionicons name="chevron-back" size={22} color="#fff" />
               </Pressable>
               <View style={{ flex: 1 }} />
+              {user && round.author?.id === user.id ? (
+                <Pressable
+                  testID="post-pin-toggle"
+                  onPress={togglePin}
+                  style={[styles.pinBtn, pinned && styles.pinBtnOn]}
+                  hitSlop={8}
+                >
+                  {pinLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={16} color="#fff" />
+                      <Text style={styles.pinBtnText}>{pinned ? 'Pinned' : 'Pin to profile'}</Text>
+                    </>
+                  )}
+                </Pressable>
+              ) : null}
             </SafeAreaView>
             <View style={styles.heroCopy}>
               <Text style={styles.heroCourse}>{round.course_name}</Text>
@@ -308,6 +354,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  pinBtnOn: { backgroundColor: colors.brandDeep },
+  pinBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   heroCopy: { position: 'absolute', left: spacing.xl, right: spacing.xl, bottom: spacing.xl },
   heroCourse: { color: '#fff', fontSize: 28, fontWeight: '800' },
   heroDate: { color: '#DCFCE7', fontSize: 14, fontWeight: '600', marginTop: 4 },

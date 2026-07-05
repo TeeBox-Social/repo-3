@@ -119,6 +119,15 @@ export default function Profile() {
         <SafeAreaView edges={['top']} style={styles.coverTopBar}>
           <View style={{ flex: 1 }} />
           <Pressable
+            testID="profile-edit"
+            onPress={() => router.push('/profile/edit')}
+            style={[styles.iconBtn, { flexDirection: 'row', paddingHorizontal: spacing.md, width: undefined, gap: 4 }]}
+            hitSlop={8}
+          >
+            <Ionicons name="create-outline" size={16} color="#fff" />
+            <Text style={styles.iconBtnText}>Edit</Text>
+          </Pressable>
+          <Pressable
             testID="profile-signout"
             onPress={signOut}
             style={styles.iconBtn}
@@ -140,21 +149,28 @@ export default function Profile() {
       </View>
 
       <View style={styles.identity}>
-        <Text style={styles.name}>{profile.display_name}</Text>
+        <Text style={styles.name} testID="profile-name">
+          {profile.display_name}
+          {profile.handicap != null ? (
+            <Text style={styles.nameHc}> · {profile.handicap} HCP</Text>
+          ) : null}
+        </Text>
         <Text style={styles.homeCourse}>{profile.home_course || 'No home course yet'}</Text>
         {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
       </View>
 
       <View style={styles.statsRow}>
-        <StatCell label="Handicap" value={profile.handicap != null ? String(profile.handicap) : '—'} />
         <StatCell label="Rounds" value={String(profile.round_count || 0)} />
         <StatCell
           label="Avg"
           value={profile.avg_score != null ? String(profile.avg_score) : '—'}
         />
+        <StatCell label="Courses" value={String(profile.courses_played || 0)} />
         <StatCell
-          label="Best"
-          value={profile.best_score != null ? String(profile.best_score) : '—'}
+          label="Friends"
+          value={String(profile.friends_count || 0)}
+          onPress={() => user && router.push(`/user/${user.id}/friends`)}
+          testID="profile-stat-friends"
         />
       </View>
 
@@ -223,9 +239,23 @@ export default function Profile() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your rounds</Text>
-        {rounds && rounds.length > 0 ? (
-          rounds.map((r) => <RoundCard key={r.id} round={r} onLike={() => onLike(r.id)} />)
-        ) : (
+        {profile.pinned_round ? (
+          <View testID="profile-pinned-round">
+            <View style={styles.pinBadge}>
+              <Ionicons name="pin" size={11} color={colors.onBrandTertiary} />
+              <Text style={styles.pinBadgeText}>Pinned round</Text>
+            </View>
+            <RoundCard
+              round={profile.pinned_round}
+              onLike={() => onLike(profile.pinned_round.id)}
+            />
+          </View>
+        ) : null}
+        {rounds && rounds.filter((r) => r.id !== profile.pinned_round?.id).length > 0 ? (
+          rounds
+            .filter((r) => r.id !== profile.pinned_round?.id)
+            .map((r) => <RoundCard key={r.id} round={r} onLike={() => onLike(r.id)} />)
+        ) : profile.pinned_round ? null : (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>No rounds logged yet</Text>
             <Text style={styles.emptySub}>Save your first scorecard and it'll show up here.</Text>
@@ -236,13 +266,36 @@ export default function Profile() {
   );
 }
 
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statCell}>
+function StatCell({
+  label,
+  value,
+  onPress,
+  testID,
+}: {
+  label: string;
+  value: string;
+  onPress?: () => void;
+  testID?: string;
+}) {
+  const inner = (
+    <>
       <Text style={styles.statVal}>{value}</Text>
       <Text style={styles.statLbl}>{label}</Text>
-    </View>
+      {onPress ? (
+        <View style={styles.statChevron}>
+          <Ionicons name="chevron-forward" size={11} color={colors.muted} />
+        </View>
+      ) : null}
+    </>
   );
+  if (onPress) {
+    return (
+      <Pressable testID={testID} onPress={onPress} style={styles.statCell} hitSlop={4}>
+        {inner}
+      </Pressable>
+    );
+  }
+  return <View style={styles.statCell}>{inner}</View>;
 }
 
 function iconFor(key: string): any {
@@ -283,6 +336,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   avatarWrap: { alignItems: 'center', marginTop: -50 },
   avatar: {
     width: 100,
@@ -299,6 +353,7 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 34, fontWeight: '800', color: colors.onBrandTertiary },
   identity: { alignItems: 'center', paddingHorizontal: spacing.xl, marginTop: spacing.md, gap: 4 },
   name: { fontSize: 24, fontWeight: '800', color: colors.onSurface },
+  nameHc: { fontSize: 15, fontWeight: '700', color: colors.brandPrimary },
   homeCourse: { fontSize: 14, color: colors.muted, fontWeight: '600' },
   bio: { fontSize: 14, color: colors.onSurface, textAlign: 'center', marginTop: spacing.sm },
   statsRow: {
@@ -310,7 +365,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadow.soft,
   },
-  statCell: { flex: 1, alignItems: 'center' },
+  statCell: { flex: 1, alignItems: 'center', position: 'relative' },
+  statChevron: { position: 'absolute', bottom: -2, right: 6 },
   statVal: { fontSize: 22, fontWeight: '800', color: colors.brandPrimary },
   statLbl: {
     fontSize: 11,
@@ -322,6 +378,18 @@ const styles = StyleSheet.create({
   },
   actionsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.md },
   section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
+  pinBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.brandTertiary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    marginBottom: spacing.sm,
+  },
+  pinBadgeText: { fontSize: 11, fontWeight: '800', color: colors.onBrandTertiary, letterSpacing: 0.4 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface, marginBottom: spacing.md },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionCount: {

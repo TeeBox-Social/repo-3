@@ -464,21 +464,49 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
     scores_cursor = rounds_col.find({"user_id": user_id}, {"_id": 0, "total_score": 1}).sort("created_at", -1).limit(20)
     recent_scores = [s["total_score"] async for s in scores_cursor]
     avg_score = round(sum(recent_scores) / len(recent_scores), 1) if recent_scores else None
-    best = min(recent_scores) if recent_scores else None
     follower_count = await follows_col.count_documents({"target_id": user_id})
     following_count = await follows_col.count_documents({"user_id": user_id})
+    # Distinct courses played
+    courses_played = 0
+    async for _ in rounds_col.aggregate([
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": "$course_name"}},
+        {"$count": "n"},
+    ]):
+        courses_played = _["n"]
+    # Friends = mutual follows
+    following_ids = {f["target_id"] async for f in follows_col.find({"user_id": user_id}, {"_id": 0, "target_id": 1})}
+    follower_ids = {f["user_id"] async for f in follows_col.find({"target_id": user_id}, {"_id": 0, "user_id": 1})}
+    friend_ids = following_ids & follower_ids
+    friends_count = len(friend_ids)
     following = False
+    is_friend = False
     if user["id"] != user_id:
         following = await follows_col.find_one({"user_id": user["id"], "target_id": user_id}) is not None
+        reverse = await follows_col.find_one({"user_id": user_id, "target_id": user["id"]}) is not None
+        is_friend = following and reverse
+    # Pinned round
+    pinned_round = None
+    pin_id = target.get("pinned_round_id")
+    if pin_id:
+        pr = await rounds_col.find_one({"id": pin_id, "user_id": user_id}, {"_id": 0})
+        if pr:
+            pinned_round = await enrich_round(pr, user["id"])
+        else:
+            # Stale pin — clear it
+            await users_col.update_one({"id": user_id}, {"$unset": {"pinned_round_id": ""}})
     return {
         **public_user(target),
+        "pinned_round": pinned_round,
         "round_count": round_count,
         "avg_score": avg_score,
-        "best_score": best,
+        "courses_played": courses_played,
+        "friends_count": friends_count,
         "follower_count": follower_count,
         "following_count": following_count,
         "wishlist_count": await wishlists_col.count_documents({"user_id": user_id}),
         "is_following": following,
+        "is_friend": is_friend,
         "is_me": user["id"] == user_id,
     }
 
@@ -486,6 +514,48 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
 async def get_user_rounds(user_id: str, user=Depends(get_current_user)):
     cursor = rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
     return [await enrich_round(r, user["id"]) async for r in cursor]
+
+@api_router.get("/users/{user_id}/friends")
+async def get_user_friends(user_id: str, user=Depends(get_current_user)):
+    following_ids = {f["target_id"] async for f in follows_col.find({"user_id": user_id}, {"_id": 0, "target_id": 1})}
+    follower_ids = {f["user_id"] async for f in follows_col.find({"target_id": user_id}, {"_id": 0, "user_id": 1})}
+    friend_ids = following_ids & follower_ids
+    if not friend_ids:
+        return []
+    # Viewer perspective
+    viewer_following = {f["target_id"] async for f in follows_col.find({"user_id": user["id"]}, {"_id": 0, "target_id": 1})}
+    viewer_followers = {f["user_id"] async for f in follows_col.find({"target_id": user["id"]}, {"_id": 0, "user_id": 1})}
+    out = []
+    async for u in users_col.find({"id": {"$in": list(friend_ids)}}, {"_id": 0, "hashed_password": 0, "email": 0}):
+        fid = u["id"]
+        is_following = fid in viewer_following
+        is_friend = fid in viewer_following and fid in viewer_followers
+        rounds = await rounds_col.count_documents({"user_id": fid})
+        out.append({
+            **public_user(u),
+            "round_count": rounds,
+            "is_following": is_following,
+            "is_friend": is_friend,
+            "is_me": fid == user["id"],
+        })
+    out.sort(key=lambda x: (not x["is_friend"], x["display_name"].lower()))
+    return out
+
+# ---- Pin a round on your profile ----
+@api_router.post("/rounds/{round_id}/pin")
+async def pin_round(round_id: str, user=Depends(get_current_user)):
+    r = await rounds_col.find_one({"id": round_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Round not found")
+    if r["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Can only pin your own rounds")
+    await users_col.update_one({"id": user["id"]}, {"$set": {"pinned_round_id": round_id}})
+    return {"pinned": True, "round_id": round_id}
+
+@api_router.delete("/users/me/pin")
+async def unpin_round(user=Depends(get_current_user)):
+    await users_col.update_one({"id": user["id"]}, {"$unset": {"pinned_round_id": ""}})
+    return {"pinned": False}
 
 @api_router.get("/users/{user_id}/achievements")
 async def get_achievements(user_id: str, user=Depends(get_current_user)):

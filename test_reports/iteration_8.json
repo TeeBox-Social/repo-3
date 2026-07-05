@@ -1,0 +1,50 @@
+{
+  "summary": "Iter8 profile-editor / pin-round / friends-screen suite tested end-to-end. Backend: 9/10 pytest cases PASS. One CRITICAL backend spec failure: PATCH /api/auth/me with {\"handicap\": null} does NOT clear the field (handicap remains at prior value). This is a direct miss against the review spec 'Handicap can be set to null to clear.' Root cause identified — see rca_of_issue. All other backend behaviour matches spec: PATCH persists display_name/bio/home_course/handicap/avatar; oversized avatar (>800k b64) returns 413; POST /rounds/{id}/pin is owner-only (403 for non-owner, 404 for missing round); DELETE /users/me/pin clears; GET /users/{id} returns pinned_round (enriched or null), round_count=2, avg_score=80.5, courses_played=2, friends_count=2 for reese; stale pinned_round auto-clears on GET /users/{id} after the pinned round is deleted (no orphan pinned_round_id in response); GET /users/{id}/friends returns mutual-follow list with correct shape and sort (friends first, alphabetical). Frontend: verified via mobile Playwright at 390x844 — profile-name renders 'Reese Callahan · 8.4 HCP' inline; stat row shows only Rounds/Avg/Courses/Friends (no Handicap/Best cell); Friends stat tappable and opens /user/{me}/friends showing 'Your friends' title with Mutual friend badges and Follow/Following toggles; Edit pill opens Profile Editor with all 7 required testIDs (name/handicap/home/bio/pick-avatar/save/back); save persists and reflects immediately on profile; Post Detail for an owned round renders post-pin-toggle that flips 'Pin to profile' → 'Pinned' with green background; profile-pinned-round badge with 'Pinned round' header appears on the profile above 'Your rounds'; other user's profile (jordan) renders identical 4-stat row with tappable user-stat-friends → '/user/{id}/friends' rendering \"Jordan's friends · 2 friends · 1 mutual with you\" header; the viewer's own row shows a 'You' badge, other rows show 'Mutual friend' + Following. user-pinned-round hidden for jordan (no pin), rendered for reese when a round is pinned.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/auth/me",
+        "issue": "Cannot clear handicap by sending {\"handicap\": null}. Server drops None-valued fields via `updates = {k: v for k, v in data.dict().items() if v is not None}` (server.py:323). Spec requires null to clear. Frontend (app/profile/edit.tsx:79) already sends handicap:null when the field is empty, so users cannot actually remove their handicap via the Profile Editor.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Profile Editor → clear handicap",
+        "issue": "UI sends handicap:null but backend ignores it, so leaving the Handicap field blank and hitting Save appears to succeed but the handicap remains unchanged after the modal closes. User-visible defect once the backend fix is in place; frontend code is correct.",
+        "affected_testIDs": ["profile-edit-handicap", "profile-edit-save"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_profile.py",
+    "/app/test_reports/pytest/iter8_results.xml"
+  ],
+  "action_items": [
+    "server.py:321-329 (update_me): stop dropping None values wholesale. Use `data.dict(exclude_unset=True)` (or model_dump(exclude_unset=True) if Pydantic v2) so fields that were explicitly sent as null pass through to `$set` and can clear the DB value. Alternatively special-case handicap: keep None-filter for other keys but always $set handicap when the key is present in the request body. Re-run test_iter8_profile.py::TestProfileEditor::test_patch_me_handicap_null_clears to verify."
+  ],
+  "critical_code_review_comments": [
+    "server.py:321-329 — using data.dict() (all fields defaulting to None) + `if v is not None` filter means PATCH semantics are effectively 'set-any-provided-non-null-value', not 'set-what-was-sent'. This silently swallows explicit null clears and could confuse other future clear-by-null use cases (bio='' still works because it's an empty string, not None, but handicap has no sentinel).",
+    "server.py:458-511 (get_user): correct stale-pin auto-clear via $unset when the referenced round no longer exists (verified). Friends_count and courses_played implementations look correct and match the seed expectations.",
+    "server.py:518-542 (get_user_friends): shape and sort verified (friends first, then alphabetical, viewer perspective is_following/is_friend/is_me). Consider projecting only the fields the client uses to keep the payload light, but not a bug.",
+    "server.py:545-558 (pin/unpin): 403 for non-owner and 404 for missing round both verified; no rate limit here but that's acceptable given the auth requirement.",
+    "frontend/app/profile/edit.tsx:79 — sends handicap:null which is the correct client behaviour. No change needed once the backend accepts nulls."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_profile.py (new — 10 pytest cases, 9 pass, 1 documents the handicap-null bug)",
+    "/app/test_reports/pytest/iter8_results.xml (junit)",
+    "/app/test_reports/iteration_8.json (this report)"
+  ],
+  "success_rate": {"backend": "90% (9/10 pytest cases passing)", "frontend": "100% (all iter6 spec items verified via Playwright)"},
+  "seed_data_creation": "Test created + deleted one TEST_iter8_temp_course round (test_deleted_pinned_round_autoclears cleans up its own round via DELETE /api/rounds/{id}). UI test transiently pinned reese's Cypress Ridge round and set bio='TEST_iter8_ui_bio' — both restored via API before finish (unpin: 200, bio restored to seed default). Net-zero data change.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only one bug remains: PATCH /api/auth/me handicap-null clear. Once fixed, re-run `pytest /app/backend/tests/test_iter8_profile.py -v` — expect 10/10. Frontend needs no change. Seed users reese/jordan/sam @teebox.demo / password123 all present. EXPO_PUBLIC_BACKEND_URL is used (not EXPO_BACKEND_URL) — the test file loads it via python-dotenv from /app/frontend/.env.",
+  "rca_of_issue": "Root cause: /app/backend/server.py:323 uses `updates = {k: v for k, v in data.dict().items() if v is not None}`. Pydantic's `.dict()` on a model with `Optional[float] = None` returns all declared fields including keys the client never sent, all defaulted to None. The current filter drops both 'unset' fields and 'explicitly-set-to-null' fields identically, so there is no way to clear handicap. Reproduction: `curl -X PATCH .../api/auth/me -H 'Auth: Bearer <reese>' -d '{\"handicap\": null}'` → 200, but subsequent GET /api/auth/me still returns the previous handicap. Mitigation: switch to `data.dict(exclude_unset=True)` (Pydantic v1) or `data.model_dump(exclude_unset=True)` (v2). This preserves the current behaviour for unset fields while allowing explicit null to reach `$set`, which MongoDB will store as BSON null (and public_user()/enrich_round() already handle handicap=None correctly downstream)."
+}
