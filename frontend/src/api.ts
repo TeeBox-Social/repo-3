@@ -68,22 +68,25 @@ export const api = {
   updateMe: (payload: Partial<User>) =>
     request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(payload) }),
 
-  feed: () => request<any[]>('/feed'),
+  feed: (scope: 'followers' | 'all' = 'followers') =>
+    request<any[]>(`/feed?scope=${scope}`),
   createRound: (payload: any) => request<any>('/rounds', { method: 'POST', body: JSON.stringify(payload) }),
   getRound: (id: string) => request<any>(`/rounds/${id}`),
   deleteRound: (id: string) => request<any>(`/rounds/${id}`, { method: 'DELETE' }),
   toggleLike: (id: string) => request<{ liked: boolean; like_count: number }>(`/rounds/${id}/like`, { method: 'POST' }),
   getComments: (id: string) => request<any[]>(`/rounds/${id}/comments`),
-  addComment: (id: string, text: string) =>
-    request<any>(`/rounds/${id}/comments`, { method: 'POST', body: JSON.stringify({ text }) }),
+  addComment: (id: string, text: string, mentions: string[] = []) =>
+    request<any>(`/rounds/${id}/comments`, { method: 'POST', body: JSON.stringify({ text, mentions }) }),
 
   getUser: (id: string) => request<any>(`/users/${id}`),
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),
+  getUserAchievements: (id: string) => request<{ total: number; achievements: any[] }>(`/users/${id}/achievements`),
   toggleFollow: (id: string) => request<{ following: boolean }>(`/users/${id}/follow`, { method: 'POST' }),
 
   discoverUsers: (q: string) => request<any[]>(`/discover/users?q=${encodeURIComponent(q)}`),
   discoverCourses: (q: string) => request<any[]>(`/discover/courses?q=${encodeURIComponent(q)}`),
   courseReviews: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/reviews`),
+  courseRounds: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/rounds`),
   createReview: (payload: { course_name: string; rating: number; text: string }) =>
     request<any>('/courses/reviews', { method: 'POST', body: JSON.stringify(payload) }),
 };

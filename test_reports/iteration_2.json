@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 2 testing: Backend 21/22 pytest passing (95%). All new endpoints work — feed scope=followers/all, /courses/{name}/rounds, hole_scores/hole_pars roundtrip, /comments with mentions, /users/{id}/achievements (correct earned flags for [82,74,96,79]), auto-seed with mutual follows. Frontend: sign-in, followers-only feed, Log tab standard icon, Log hole-by-hole grid + auto-sum, Post Detail scorecard grid, Discover search & segments, Course Detail 5-star review submit + course-all-rounds section, Profile achievements strip (all 9 achievement-* testIDs, profile-signout & profile-achievements present) all work. ONE CRITICAL BUG: MentionInput throws 'inputRef.current?.setNativeProps is not a function' (React Native Web) after picking a @mention suggestion — the suggestion is inserted but a red uncaught-error overlay appears, blocking comment submit.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "test_teebox_api.py::test_follow_toggle_and_self", "issue": "Stale iter1 test — assumes no pre-existing follow, but seed now creates mutual follows between demo users so first toggle returns following=False. Update test to register a fresh user and target another fresh user (not seeded)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MentionInput", "issue": "After picking a mention suggestion (e.g. tapping mention-suggest-<id>), the component calls inputRef.current?.setNativeProps({ selection: {...} }) inside a setTimeout at src/components/MentionInput.tsx:85. React Native Web's TextInput does NOT expose setNativeProps, so this throws 'inputRef.current?.setNativeProps is not a function' and Expo web renders a full-page red error overlay. The mention text IS inserted correctly ('Great round @Jordan_Kim '), but the overlay blocks subsequent taps — the following comment submit does not fire (post detail shows 0 comments after 'send'). Wrap the setNativeProps call with Platform.OS !== 'web' guard, or drive caret via a controlled `selection` state prop instead.", "testID": "mention-suggest-<id>", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Post Detail → add comment with @mention", "issue": "Comment with mention is not submitted end-to-end on web due to the setNativeProps crash above. Native builds may still work, but web preview is broken.", "affected_testIDs": ["post-comment-input", "mention-suggestions", "mention-suggest-*", "post-comment-send"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "MentionInput", "issue": "setNativeProps not supported on React Native Web TextInput. Reference: /app/frontend/src/components/MentionInput.tsx:85"},
+      {"component": "shadow styles", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Non-blocking but should migrate for RN 0.76+ / web parity."},
+      {"component": "pointerEvents prop", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Update usages (likely inside overlays or Pressable wrappers)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_teebox_api.py",
+    "/app/backend/tests/test_iter2.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix MentionInput.tsx:85 — guard setNativeProps for web (Platform.OS !== 'web') or use TextInput's `selection` prop via state to place caret after inserted mention. This is the critical iter2 blocker.",
+    "Update stale test test_follow_toggle_and_self to pick a user not seeded/pre-followed (e.g., register a fresh other user and follow them).",
+    "Address deprecation warnings: replace shadow* props with boxShadow, and props.pointerEvents with style.pointerEvents (non-blocking)."
+  ],
+  "critical_code_review_comments": [
+    "MentionInput.tsx should be web-safe — avoid setNativeProps in an Expo app that also serves via web preview.",
+    "server.py enrich_round properly excludes _id; achievements logic matches spec exactly for [82,74,96,79] test case.",
+    "server.py /feed followers scope correctly filters by follows + self.",
+    "Auto-seed on startup is idempotent (skips if users_col non-empty)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter2.py (new file)"
+  ],
+  "success_rate": {"backend": "95% (21/22)", "frontend": "~85% (7 of 8 iter2 UI flows pass; mention insertion crashes on web)"},
+  "seed_data_creation": "Multiple TEST_* users and rounds created via the API during testing (test_iter2.py fixtures). Server auto-seeded 3 demo users + 4 demo rounds + mutual follows on empty DB.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend URL: EXPO_PUBLIC_BACKEND_URL (https://tee-social-2.preview.emergentagent.com). Demo login reese@teebox.demo/password123. Sign-in testIDs are sign-in-email / sign-in-password / sign-in-submit (NOT signin-*). Round card testID is 'round-card-<uuid>' (author/like/comment sub-testIDs share prefix). Post detail comment send button is 'post-comment-send'. Discover course cards are 'discover-course-<course_name>' (visible only under Courses tab after clicking 'discover-tab-courses'). Achievements: profile-achievements + achievement-<key>. The MentionInput setNativeProps bug will block any web-based mention flow retest until fixed.",
+  "rca_of_issue": "MentionInput.tsx line 85 executes `inputRef.current?.setNativeProps({ selection: { start: nextCaret, end: nextCaret } })` inside a setTimeout after inserting an @Mention. On React Native Web, TextInput's underlying element does not implement setNativeProps, so the optional chaining stops null but the resulting function-call attempt throws 'setNativeProps is not a function'. Reproduction: sign in → open any post detail → focus comment input → type '@' → tap any mention-suggest-<id> → red overlay appears. Mitigation: `if (Platform.OS !== 'web') inputRef.current?.setNativeProps?.({ selection: ... })` OR use `<TextInput selection={selRange} onSelectionChange={...} />` with state so caret is set declaratively."
+}

@@ -30,7 +30,7 @@ export default function Feed() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await api.feed();
+      const data = await api.feed('followers');
       setRounds(data);
     } catch (e: any) {
       setError(e?.message || 'Failed to load feed');
@@ -130,11 +130,18 @@ export default function Feed() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Image source={{ uri: IMAGES.emptyFeed }} style={styles.emptyImg} contentFit="cover" />
-            <Text style={styles.emptyTitle}>No rounds yet</Text>
+            <Text style={styles.emptyTitle}>Your feed is quiet</Text>
             <Text style={styles.emptySub}>
-              Log your first round or head over to Discover to follow other golfers.
+              Follow other golfers from Discover, or log your own round to start the conversation.
             </Text>
             <TBButton label="Log a round" testID="empty-log-round" onPress={() => router.push('/(tabs)/log')} />
+            <Pressable
+              testID="empty-find-golfers"
+              onPress={() => router.push('/(tabs)/discover')}
+              style={{ marginTop: spacing.sm }}
+            >
+              <Text style={{ color: colors.brandPrimary, fontWeight: '800' }}>Find golfers to follow</Text>
+            </Pressable>
           </View>
         }
         ListFooterComponent={

@@ -45,10 +45,8 @@ export default function TabsLayout() {
         name="log"
         options={{
           title: 'Log',
-          tabBarIcon: ({ focused }) => (
-            <View style={[styles.logIcon, focused && styles.logIconActive]}>
-              <Ionicons name="add" size={26} color="#fff" />
-            </View>
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={26} color={color} />
           ),
           tabBarButtonTestID: 'tab-log',
         }}

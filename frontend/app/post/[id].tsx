@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  TextInput,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
+import { MentionInput } from '@/src/components/MentionInput';
+import { HoleGrid } from '@/src/components/HoleGrid';
 
 export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +26,7 @@ export default function PostDetail() {
   const [round, setRound] = useState<any>(null);
   const [comments, setComments] = useState<any[] | null>(null);
   const [text, setText] = useState('');
+  const [mentions, setMentions] = useState<string[]>([]);
   const [posting, setPosting] = useState(false);
 
   const load = useCallback(async () => {
@@ -58,9 +60,10 @@ export default function PostDetail() {
     if (!text.trim()) return;
     setPosting(true);
     try {
-      const c = await api.addComment(String(id), text.trim());
+      const c = await api.addComment(String(id), text.trim(), mentions);
       setComments((prev) => [...(prev || []), c]);
       setText('');
+      setMentions([]);
       setRound((prev: any) => (prev ? { ...prev, comment_count: prev.comment_count + 1 } : prev));
     } catch {
     } finally {
@@ -181,6 +184,17 @@ export default function PostDetail() {
               </View>
             ) : null}
 
+            {round.hole_scores && round.hole_scores.length === 18 ? (
+              <View testID="post-hole-grid" style={styles.holeCard}>
+                <Text style={styles.holeCardTitle}>Scorecard</Text>
+                <HoleGrid
+                  scores={round.hole_scores.map((n: number) => String(n))}
+                  pars={round.hole_pars && round.hole_pars.length === 18 ? round.hole_pars : undefined}
+                  readOnly
+                />
+              </View>
+            ) : null}
+
             {round.notes ? <Text style={styles.notes}>{round.notes}</Text> : null}
 
             <View style={styles.actions}>
@@ -211,15 +225,17 @@ export default function PostDetail() {
 
         <SafeAreaView edges={['bottom']} style={styles.commentBarSafe}>
           <View style={styles.commentBar}>
-            <TextInput
-              testID="post-comment-input"
-              value={text}
-              onChangeText={setText}
-              placeholder="Add a comment"
-              placeholderTextColor={colors.muted}
-              style={styles.commentInput}
-              multiline
-            />
+            <View style={{ flex: 1 }}>
+              <MentionInput
+                testID="post-comment-input"
+                value={text}
+                onChangeText={setText}
+                onMentionsChange={setMentions}
+                placeholder="Add a comment — try @name"
+                style={styles.commentInput}
+                multiline
+              />
+            </View>
             <Pressable
               testID="post-comment-send"
               onPress={onSubmit}
@@ -251,6 +267,7 @@ function CommentRow({ c }: { c: any }) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
+  const parts = String(c.text || '').split(/(@\S+)/g);
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentAvatar}>
@@ -262,7 +279,17 @@ function CommentRow({ c }: { c: any }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.commentAuthor}>{c.author?.display_name || 'Golfer'}</Text>
-        <Text style={styles.commentText}>{c.text}</Text>
+        <Text style={styles.commentText}>
+          {parts.map((p, i) =>
+            p.startsWith('@') ? (
+              <Text key={i} style={styles.mention}>
+                {p}
+              </Text>
+            ) : (
+              <Text key={i}>{p}</Text>
+            ),
+          )}
+        </Text>
       </View>
     </View>
   );
@@ -364,6 +391,15 @@ const styles = StyleSheet.create({
   commentAvatarText: { color: colors.onBrandTertiary, fontWeight: '800', fontSize: 12 },
   commentAuthor: { fontSize: 13, fontWeight: '800', color: colors.onSurface },
   commentText: { fontSize: 14, color: colors.onSurface, marginTop: 2, lineHeight: 20 },
+  mention: { color: colors.brandPrimary, fontWeight: '800' },
+  holeCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    ...shadow.soft,
+    gap: spacing.sm,
+  },
+  holeCardTitle: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   commentBarSafe: {
     borderTopWidth: 1,
     borderTopColor: colors.divider,

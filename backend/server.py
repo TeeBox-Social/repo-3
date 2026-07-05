@@ -92,9 +92,12 @@ class RoundIn(BaseModel):
     notes: Optional[str] = ""
     photos: List[str] = []  # base64 data URIs
     weather: Optional[str] = None
+    hole_scores: List[int] = []  # length 18 (or empty)
+    hole_pars: List[int] = []    # length 18 (or empty)
 
 class CommentIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+    mentions: List[str] = []  # optional user ids
 
 class ReviewIn(BaseModel):
     course_name: str
@@ -198,16 +201,31 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         "notes": data.notes or "",
         "photos": data.photos or [],
         "weather": data.weather,
+        "hole_scores": data.hole_scores or [],
+        "hole_pars": data.hole_pars or [],
         "created_at": now_iso(),
     }
     await rounds_col.insert_one(doc)
     return await enrich_round(doc, user["id"])
 
 @api_router.get("/feed")
-async def get_feed(limit: int = Query(30, ge=1, le=100), user=Depends(get_current_user)):
-    cursor = rounds_col.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+async def get_feed(
+    scope: str = Query("followers"),
+    limit: int = Query(30, ge=1, le=100),
+    user=Depends(get_current_user),
+):
+    query: dict = {}
+    if scope == "followers":
+        following = [f["target_id"] async for f in follows_col.find({"user_id": user["id"]}, {"_id": 0, "target_id": 1})]
+        query = {"user_id": {"$in": following + [user["id"]]}}
+    cursor = rounds_col.find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
     items = [await enrich_round(r, user["id"]) async for r in cursor]
     return items
+
+@api_router.get("/courses/{course_name}/rounds")
+async def get_course_rounds(course_name: str, user=Depends(get_current_user)):
+    cursor = rounds_col.find({"course_name": course_name}, {"_id": 0}).sort("created_at", -1).limit(50)
+    return [await enrich_round(r, user["id"]) async for r in cursor]
 
 @api_router.get("/rounds/{round_id}")
 async def get_round(round_id: str, user=Depends(get_current_user)):
@@ -273,6 +291,7 @@ async def add_comment(round_id: str, data: CommentIn, user=Depends(get_current_u
         "round_id": round_id,
         "user_id": user["id"],
         "text": data.text.strip(),
+        "mentions": data.mentions or [],
         "created_at": now_iso(),
     }
     await comments_col.insert_one(doc)
@@ -317,6 +336,37 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
 async def get_user_rounds(user_id: str, user=Depends(get_current_user)):
     cursor = rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
     return [await enrich_round(r, user["id"]) async for r in cursor]
+
+@api_router.get("/users/{user_id}/achievements")
+async def get_achievements(user_id: str, user=Depends(get_current_user)):
+    rounds = [r async for r in rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1)]
+    scores = [r["total_score"] for r in rounds]
+    courses = {r["course_name"] for r in rounds}
+    # Consecutive rounds <= 80 count
+    streak = 0
+    best_streak = 0
+    for s in scores:
+        if s <= 80:
+            streak += 1
+            best_streak = max(best_streak, streak)
+        else:
+            streak = 0
+
+    defs = [
+        {"key": "first_round", "title": "On the tee", "desc": "Logged your first round.", "icon": "flag", "earned": len(rounds) >= 1},
+        {"key": "sub_100", "title": "Broke 100", "desc": "Posted a round under 100.", "icon": "trophy", "earned": any(s < 100 for s in scores)},
+        {"key": "sub_90", "title": "Broke 90", "desc": "Posted a round under 90.", "icon": "trophy", "earned": any(s < 90 for s in scores)},
+        {"key": "sub_80", "title": "First sub-80", "desc": "Posted a round under 80.", "icon": "trophy", "earned": any(s < 80 for s in scores)},
+        {"key": "sub_70", "title": "Sub-70 club", "desc": "Posted a round under 70.", "icon": "star", "earned": any(s < 70 for s in scores)},
+        {"key": "ten_rounds", "title": "Regular", "desc": "Logged 10 rounds.", "icon": "golf", "earned": len(rounds) >= 10},
+        {"key": "fifty_rounds", "title": "Half-century", "desc": "Logged 50 rounds.", "icon": "medal", "earned": len(rounds) >= 50},
+        {"key": "course_collector", "title": "Course collector", "desc": "Played 5 different courses.", "icon": "map", "earned": len(courses) >= 5},
+        {"key": "hot_streak", "title": "Hot streak", "desc": "3 rounds in a row at or under 80.", "icon": "flame", "earned": best_streak >= 3},
+    ]
+    return {
+        "total": sum(1 for d in defs if d["earned"]),
+        "achievements": defs,
+    }
 
 @api_router.post("/users/{user_id}/follow")
 async def toggle_follow(user_id: str, user=Depends(get_current_user)):
@@ -466,8 +516,21 @@ async def seed():
             "notes": notes,
             "photos": [],
             "weather": None,
+            "hole_scores": [],
+            "hole_pars": [],
             "created_at": now_iso(),
         })
+    # Mutual follows across demo users so followers-only feed has content
+    for a in ids:
+        for b in ids:
+            if a == b:
+                continue
+            await follows_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": a,
+                "target_id": b,
+                "created_at": now_iso(),
+            })
     return {"seeded": True, "users": len(demo_users), "rounds": len(demo_rounds)}
 
 # Mount router

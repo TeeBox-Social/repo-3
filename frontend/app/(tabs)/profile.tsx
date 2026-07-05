@@ -24,14 +24,20 @@ export default function Profile() {
   const { user, signOut, refresh } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [rounds, setRounds] = useState<any[] | null>(null);
+  const [achievements, setAchievements] = useState<any | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const [p, r] = await Promise.all([api.getUser(user.id), api.getUserRounds(user.id)]);
+      const [p, r, a] = await Promise.all([
+        api.getUser(user.id),
+        api.getUserRounds(user.id),
+        api.getUserAchievements(user.id),
+      ]);
       setProfile(p);
       setRounds(r);
+      setAchievements(a);
     } catch {}
   }, [user]);
 
@@ -157,6 +163,40 @@ export default function Profile() {
         />
       </View>
 
+      {achievements && achievements.achievements ? (
+        <View style={styles.section} testID="profile-achievements">
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Achievements</Text>
+            <Text style={styles.sectionCount}>{achievements.total}/{achievements.achievements.length}</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.achRow}
+          >
+            {achievements.achievements.map((a: any) => (
+              <View
+                key={a.key}
+                testID={`achievement-${a.key}`}
+                style={[styles.achCard, !a.earned && styles.achCardLocked]}
+              >
+                <View style={[styles.achIcon, !a.earned && styles.achIconLocked]}>
+                  <Ionicons
+                    name={a.earned ? iconFor(a.icon) : 'lock-closed'}
+                    size={22}
+                    color={a.earned ? '#fff' : colors.muted}
+                  />
+                </View>
+                <Text style={[styles.achTitle, !a.earned && { color: colors.muted }]}>{a.title}</Text>
+                <Text style={styles.achDesc} numberOfLines={2}>
+                  {a.desc}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your rounds</Text>
         {rounds && rounds.length > 0 ? (
@@ -179,6 +219,27 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <Text style={styles.statLbl}>{label}</Text>
     </View>
   );
+}
+
+function iconFor(key: string): any {
+  switch (key) {
+    case 'flag':
+      return 'flag';
+    case 'trophy':
+      return 'trophy';
+    case 'star':
+      return 'star';
+    case 'golf':
+      return 'golf';
+    case 'medal':
+      return 'medal';
+    case 'map':
+      return 'map';
+    case 'flame':
+      return 'flame';
+    default:
+      return 'ribbon';
+  }
 }
 
 const styles = StyleSheet.create({
@@ -238,6 +299,39 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.md },
   section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface, marginBottom: spacing.md },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionCount: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.brandPrimary,
+    backgroundColor: colors.brandTertiary,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    marginBottom: spacing.md,
+  },
+  achRow: { gap: spacing.md, paddingRight: spacing.lg },
+  achCard: {
+    width: 140,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    gap: 6,
+    ...shadow.soft,
+  },
+  achCardLocked: { backgroundColor: colors.surfaceTertiary },
+  achIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  achIconLocked: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  achTitle: { fontSize: 13, fontWeight: '800', color: colors.onSurface },
+  achDesc: { fontSize: 11, color: colors.muted, lineHeight: 15 },
   emptyBox: {
     padding: spacing.xl,
     backgroundColor: colors.surfaceSecondary,

@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
+import { HoleGrid } from '@/src/components/HoleGrid';
 import { api } from '@/src/api';
 
 // This screen doubles as the Share Intent target.
@@ -47,6 +48,8 @@ export default function LogRound() {
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
+  const [holeScores, setHoleScores] = useState<string[]>(Array(18).fill(''));
+  const [showHoles, setShowHoles] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -102,7 +105,23 @@ export default function LogRound() {
     setNotes('');
     setPhotos([]);
     setPrefillSource(null);
+    setHoleScores(Array(18).fill(''));
+    setShowHoles(false);
     setErr(null);
+  };
+
+  const setHoleScore = (idx: number, v: string) => {
+    setHoleScores((prev) => {
+      const next = [...prev];
+      next[idx] = v;
+      // Auto-sum into total_score when at least one hole is filled
+      const nums = next.map((s) => Number(s) || 0);
+      const filled = nums.filter((n) => n > 0);
+      if (filled.length > 0) {
+        setTotalScore(String(nums.reduce((a, b) => a + b, 0)));
+      }
+      return next;
+    });
   };
 
   const onSubmit = async () => {
@@ -118,6 +137,8 @@ export default function LogRound() {
     }
     setLoading(true);
     try {
+      const holeNums = holeScores.map((s) => Number(s) || 0);
+      const hasHoles = holeNums.some((n) => n > 0);
       await api.createRound({
         course_name: courseName.trim(),
         total_score: score,
@@ -128,6 +149,7 @@ export default function LogRound() {
         putts: putts ? Number(putts) : null,
         notes: notes.trim(),
         photos,
+        hole_scores: hasHoles ? holeNums : [],
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       resetForm();
@@ -253,6 +275,30 @@ export default function LogRound() {
             placeholder="How did it go? Anything memorable?"
             style={{ minHeight: 90, textAlignVertical: 'top' }}
           />
+
+          <View style={styles.holesHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionLabel}>Hole-by-hole</Text>
+              <Text style={styles.holesSub}>Optional — auto-sums into total score.</Text>
+            </View>
+            <Pressable
+              testID="log-toggle-holes"
+              onPress={() => setShowHoles((v) => !v)}
+              style={styles.togglePill}
+            >
+              <Text style={styles.togglePillText}>{showHoles ? 'Hide' : 'Show'}</Text>
+              <Ionicons
+                name={showHoles ? 'chevron-up' : 'chevron-down'}
+                size={14}
+                color={colors.brandPrimary}
+              />
+            </Pressable>
+          </View>
+          {showHoles ? (
+            <View testID="log-hole-grid">
+              <HoleGrid scores={holeScores} onChangeScore={setHoleScore} />
+            </View>
+          ) : null}
 
           <Text style={styles.sectionLabel}>Photos ({photos.length}/3)</Text>
           <View style={styles.photoRow}>
@@ -391,6 +437,22 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   tipText: { flex: 1, fontSize: 12, color: colors.onSurfaceTertiary, lineHeight: 17 },
+  holesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  holesSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  togglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+  },
+  togglePillText: { fontSize: 12, fontWeight: '800', color: colors.brandPrimary },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(253,252,248,0.6)',

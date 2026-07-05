@@ -19,12 +19,14 @@ import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
+import { RoundCard } from '@/src/components/RoundCard';
 
 export default function CourseDetail() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const router = useRouter();
   const courseName = decodeURIComponent(String(name || ''));
   const [reviews, setReviews] = useState<any[] | null>(null);
+  const [rounds, setRounds] = useState<any[] | null>(null);
   const [text, setText] = useState('');
   const [rating, setRating] = useState(4);
   const [posting, setPosting] = useState(false);
@@ -32,13 +34,40 @@ export default function CourseDetail() {
 
   const load = useCallback(async () => {
     try {
-      setReviews(await api.courseReviews(courseName));
+      const [rvs, rds] = await Promise.all([api.courseReviews(courseName), api.courseRounds(courseName)]);
+      setReviews(rvs);
+      setRounds(rds);
     } catch {}
   }, [courseName]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const onLike = async (rid: string) => {
+    if (!rounds) return;
+    setRounds(
+      rounds.map((r) =>
+        r.id === rid
+          ? {
+              ...r,
+              liked_by_me: !r.liked_by_me,
+              like_count: r.liked_by_me ? Math.max(0, r.like_count - 1) : r.like_count + 1,
+            }
+          : r,
+      ),
+    );
+    try {
+      const res = await api.toggleLike(rid);
+      setRounds((prev) =>
+        prev
+          ? prev.map((r) =>
+              r.id === rid ? { ...r, liked_by_me: res.liked, like_count: res.like_count } : r,
+            )
+          : prev,
+      );
+    } catch {}
+  };
 
   const submit = async () => {
     setErr(null);
@@ -137,6 +166,20 @@ export default function CourseDetail() {
             ) : (
               <Text style={styles.emptyText}>No reviews yet. Yours could be the first.</Text>
             )}
+
+            <View testID="course-all-rounds" style={{ marginTop: spacing.xl }}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>All rounds here</Text>
+                <View style={styles.allPill}>
+                  <Text style={styles.allPillText}>All</Text>
+                </View>
+              </View>
+              {rounds && rounds.length > 0 ? (
+                rounds.map((r) => <RoundCard key={r.id} round={r} onLike={() => onLike(r.id)} />)
+              ) : (
+                <Text style={styles.emptyText}>Be the first golfer to log a round here.</Text>
+              )}
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -198,6 +241,14 @@ const styles = StyleSheet.create({
   ratingText: { color: '#DCFCE7', fontSize: 14, fontWeight: '600' },
   body: { padding: spacing.xl, gap: spacing.md },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  allPill: {
+    backgroundColor: colors.brandTertiary,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  allPillText: { fontSize: 11, fontWeight: '800', color: colors.onBrandTertiary, letterSpacing: 0.5 },
   starsRow: { flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm },
   errText: { color: colors.error, fontWeight: '700', fontSize: 13 },
   emptyText: { color: colors.muted, fontSize: 14, fontStyle: 'italic' },
