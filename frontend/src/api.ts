@@ -1,11 +1,12 @@
 import { storage } from '@/src/utils/storage';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const TOKEN_KEY = 'teebox_jwt_v1';
+const ACCESS_KEY = 'teebox_access_v2';
+const REFRESH_KEY = 'teebox_refresh_v2';
 
 export type User = {
   id: string;
-  email: string;
+  email?: string;
   display_name: string;
   home_course?: string;
   handicap?: number | null;
@@ -13,29 +14,78 @@ export type User = {
   avatar?: string | null;
 };
 
-export async function saveToken(token: string) {
-  await storage.secureSet(TOKEN_KEY, token);
+export async function saveTokens(access: string, refresh: string) {
+  await storage.secureSet(ACCESS_KEY, access);
+  await storage.secureSet(REFRESH_KEY, refresh);
 }
 
-export async function getToken(): Promise<string | null> {
-  const v = await storage.secureGet<string>(TOKEN_KEY, '');
+export async function getAccessToken(): Promise<string | null> {
+  const v = await storage.secureGet<string>(ACCESS_KEY, '');
   return v && typeof v === 'string' && v.length > 0 ? v : null;
 }
 
-export async function clearToken() {
-  await storage.secureRemove(TOKEN_KEY);
+export async function getRefreshToken(): Promise<string | null> {
+  const v = await storage.secureGet<string>(REFRESH_KEY, '');
+  return v && typeof v === 'string' && v.length > 0 ? v : null;
 }
 
-async function request<T>(path: string, opts: RequestInit = {}, auth = true): Promise<T> {
+export async function clearTokens() {
+  await storage.secureRemove(ACCESS_KEY);
+  await storage.secureRemove(REFRESH_KEY);
+}
+
+// ------- Refresh queue: serialize concurrent refreshes so we never double-rotate -------
+let refreshInFlight: Promise<string | null> | null = null;
+let onAuthLostHandler: (() => void) | null = null;
+
+export function setOnAuthLost(handler: () => void) {
+  onAuthLostHandler = handler;
+}
+
+async function performRefresh(): Promise<string | null> {
+  const rt = await getRefreshToken();
+  if (!rt) return null;
+  try {
+    const res = await fetch(`${BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
+    if (!res.ok) throw new Error(`refresh failed ${res.status}`);
+    const data = await res.json();
+    await saveTokens(data.access_token, data.refresh_token);
+    return data.access_token as string;
+  } catch {
+    await clearTokens();
+    onAuthLostHandler?.();
+    return null;
+  }
+}
+
+function refreshAccess(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = performRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function request<T>(path: string, opts: RequestInit = {}, auth = true, _retry = false): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(opts.headers as Record<string, string> | undefined),
   };
   if (auth) {
-    const token = await getToken();
+    const token = await getAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+  if (res.status === 401 && auth && !_retry) {
+    // Attempt a single refresh + retry
+    const newAccess = await refreshAccess();
+    if (newAccess) return request<T>(path, opts, auth, true);
+  }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
@@ -53,17 +103,30 @@ export const api = {
     home_course?: string;
     handicap?: number;
   }) =>
-    request<{ access_token: string; user: User }>(
+    request<{ access_token: string; refresh_token: string; user: User }>(
       '/auth/register',
       { method: 'POST', body: JSON.stringify(payload) },
       false,
     ),
   login: (email: string, password: string) =>
-    request<{ access_token: string; user: User }>(
+    request<{ access_token: string; refresh_token: string; user: User }>(
       '/auth/login',
       { method: 'POST', body: JSON.stringify({ email, password }) },
       false,
     ),
+  logout: async () => {
+    const rt = await getRefreshToken();
+    if (rt) {
+      try {
+        await fetch(`${BASE}/api/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: rt }),
+        });
+      } catch {}
+    }
+    await clearTokens();
+  },
   me: () => request<User>('/auth/me'),
   updateMe: (payload: Partial<User>) =>
     request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(payload) }),
@@ -81,6 +144,13 @@ export const api = {
   getUser: (id: string) => request<any>(`/users/${id}`),
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),
   getUserAchievements: (id: string) => request<{ total: number; achievements: any[] }>(`/users/${id}/achievements`),
+  getUserWishlist: (id: string) => request<any[]>(`/users/${id}/wishlist`),
+  addWishlist: (course_name: string) =>
+    request<{ added: boolean }>('/wishlist', { method: 'POST', body: JSON.stringify({ course_name }) }),
+  removeWishlist: (course_name: string) =>
+    request<{ removed: boolean }>(`/wishlist/${encodeURIComponent(course_name)}`, { method: 'DELETE' }),
+  checkWishlist: (course_name: string) =>
+    request<{ on_wishlist: boolean }>(`/wishlist/check/${encodeURIComponent(course_name)}`),
   toggleFollow: (id: string) => request<{ following: boolean }>(`/users/${id}/follow`, { method: 'POST' }),
 
   discoverUsers: (q: string) => request<any[]>(`/discover/users?q=${encodeURIComponent(q)}`),

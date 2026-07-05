@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -13,6 +13,9 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 
 ROOT_DIR = Path(__file__).parent
@@ -30,12 +33,16 @@ comments_col = db.comments
 follows_col = db.follows
 reviews_col = db.course_reviews
 courses_col = db.courses
+refresh_tokens_col = db.refresh_tokens
+wishlists_col = db.wishlists
 
 # Auth config
 SECRET_KEY = os.environ["JWT_SECRET_KEY"]
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-EXPIRE_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
+ACCESS_EXPIRE_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+REFRESH_EXPIRE_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 ENABLE_DEMO_SEED = os.environ.get("ENABLE_DEMO_SEED", "false").lower() in ("1", "true", "yes")
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
 # SEC-001: refuse to boot with a placeholder secret
 _placeholder_tokens = ("change_me", "changeme", "placeholder", "changethis", "your-secret")
@@ -75,27 +82,64 @@ def public_user(u: dict) -> dict:
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
+# Rate limiter (per remote IP)
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 api_router = APIRouter(prefix="/api")
 
 # ---- Utils ----
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
-def create_token(sub: str) -> str:
-    payload = {"sub": sub, "exp": datetime.now(timezone.utc) + timedelta(minutes=EXPIRE_MIN)}
+def create_access_token(sub: str) -> str:
+    payload = {
+        "sub": sub,
+        "type": "access",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_EXPIRE_MIN),
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+async def create_refresh_token(user_id: str, family_id: Optional[str] = None) -> str:
+    jti = str(uuid.uuid4())
+    family_id = family_id or jti
+    expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_EXPIRE_DAYS)
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "type": "refresh",
+            "jti": jti,
+            "family_id": family_id,
+            "exp": expires_at,
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    await refresh_tokens_col.insert_one({
+        "jti": jti,
+        "user_id": user_id,
+        "family_id": family_id,
+        "expires_at": expires_at,
+        "is_revoked": False,
+        "is_rotated": False,
+        "created_at": now_iso(),
+    })
+    return token
 
 async def get_current_user(cred: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if cred is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM], options={"leeway": 30})
+        if payload.get("type") not in (None, "access"):  # None = legacy tokens
+            raise HTTPException(status_code=401, detail="Invalid token type")
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     user = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -115,8 +159,12 @@ class LoginIn(BaseModel):
 
 class AuthOut(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user: dict
+
+class RefreshIn(BaseModel):
+    refresh_token: str
 
 class RoundIn(BaseModel):
     course_name: str = Field(min_length=1, max_length=120)
@@ -177,7 +225,8 @@ async def root():
     return {"message": "TeeBox API", "status": "ok"}
 
 @api_router.post("/auth/register", response_model=AuthOut)
-async def register(data: RegisterIn):
+@limiter.limit("5/minute; 20/hour")
+async def register(request: Request, data: RegisterIn):
     existing = await users_col.find_one({"email": data.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -194,20 +243,65 @@ async def register(data: RegisterIn):
         "created_at": now_iso(),
     }
     await users_col.insert_one(doc)
-    token = create_token(user_id)
+    access = create_access_token(user_id)
+    refresh = await create_refresh_token(user_id)
     doc.pop("_id", None)
     doc.pop("hashed_password", None)
-    return {"access_token": token, "user": doc}
+    return {"access_token": access, "refresh_token": refresh, "user": doc}
 
 @api_router.post("/auth/login", response_model=AuthOut)
-async def login(data: LoginIn):
+@limiter.limit("10/minute; 60/hour")
+async def login(request: Request, data: LoginIn):
     user = await users_col.find_one({"email": data.email.lower()})
     if not user or not pwd_context.verify(data.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
-    token = create_token(user["id"])
+    access = create_access_token(user["id"])
+    refresh = await create_refresh_token(user["id"])
     user.pop("_id", None)
     user.pop("hashed_password", None)
-    return {"access_token": token, "user": user}
+    return {"access_token": access, "refresh_token": refresh, "user": user}
+
+@api_router.post("/auth/refresh", response_model=AuthOut)
+@limiter.limit("60/minute")
+async def refresh(request: Request, data: RefreshIn):
+    try:
+        payload = jwt.decode(data.refresh_token, SECRET_KEY, algorithms=[ALGORITHM], options={"leeway": 30})
+        if payload.get("type") != "refresh":
+            raise JWTError("wrong type")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    jti = payload.get("jti")
+    family_id = payload.get("family_id")
+    user_id = payload.get("sub")
+    db_token = await refresh_tokens_col.find_one({"jti": jti})
+    if not db_token:
+        # Unknown jti = family compromise; revoke everything for this family if we know it
+        if family_id:
+            await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+        raise HTTPException(status_code=401, detail="Refresh token not recognised")
+    if db_token.get("is_rotated") or db_token.get("is_revoked"):
+        # Reuse detected — nuke the family
+        await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
+    # Mark current as rotated & issue new pair
+    await refresh_tokens_col.update_one({"jti": jti}, {"$set": {"is_rotated": True, "rotated_at": now_iso()}})
+    user = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User no longer exists")
+    new_access = create_access_token(user_id)
+    new_refresh = await create_refresh_token(user_id, family_id=family_id)
+    return {"access_token": new_access, "refresh_token": new_refresh, "user": user}
+
+@api_router.post("/auth/logout")
+async def logout(data: RefreshIn):
+    try:
+        payload = jwt.decode(data.refresh_token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+        jti = payload.get("jti")
+        if jti:
+            await refresh_tokens_col.update_one({"jti": jti}, {"$set": {"is_revoked": True}})
+    except JWTError:
+        pass
+    return {"ok": True}
 
 @api_router.get("/auth/me")
 async def me(user=Depends(get_current_user)):
@@ -372,6 +466,7 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
         "best_score": best,
         "follower_count": follower_count,
         "following_count": following_count,
+        "wishlist_count": await wishlists_col.count_documents({"user_id": user_id}),
         "is_following": following,
         "is_me": user["id"] == user_id,
     }
@@ -430,6 +525,51 @@ async def toggle_follow(user_id: str, user=Depends(get_current_user)):
         "created_at": now_iso(),
     })
     return {"following": True}
+
+# ---- Wishlist ----
+async def _enrich_wishlist_entry(entry: dict) -> dict:
+    course = await courses_col.find_one({"name": entry["course_name"]}, {"_id": 0})
+    return {
+        "course_name": entry["course_name"],
+        "added_at": entry.get("created_at"),
+        "city": course.get("city") if course else None,
+        "region": course.get("region") if course else None,
+        "country": course.get("country") if course else None,
+    }
+
+class WishlistIn(BaseModel):
+    course_name: str = Field(min_length=1, max_length=120)
+
+@api_router.get("/users/{user_id}/wishlist")
+async def get_wishlist(user_id: str, user=Depends(get_current_user)):
+    out = []
+    async for w in wishlists_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1):
+        out.append(await _enrich_wishlist_entry(w))
+    return out
+
+@api_router.post("/wishlist")
+async def add_to_wishlist(data: WishlistIn, user=Depends(get_current_user)):
+    course_name = data.course_name.strip()
+    existing = await wishlists_col.find_one({"user_id": user["id"], "course_name": course_name})
+    if existing:
+        return {"added": False, "reason": "already on wishlist"}
+    await wishlists_col.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "course_name": course_name,
+        "created_at": now_iso(),
+    })
+    return {"added": True}
+
+@api_router.delete("/wishlist/{course_name}")
+async def remove_from_wishlist(course_name: str, user=Depends(get_current_user)):
+    res = await wishlists_col.delete_one({"user_id": user["id"], "course_name": course_name})
+    return {"removed": res.deleted_count > 0}
+
+@api_router.get("/wishlist/check/{course_name}")
+async def check_wishlist(course_name: str, user=Depends(get_current_user)):
+    exists = await wishlists_col.find_one({"user_id": user["id"], "course_name": course_name}) is not None
+    return {"on_wishlist": exists}
 
 # ---- Discover ----
 @api_router.get("/discover/users")
@@ -767,7 +907,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -780,6 +920,15 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def on_startup():
+    # Refresh token indexes: unique jti + auto-expire once past exp
+    try:
+        await refresh_tokens_col.create_index("jti", unique=True)
+        await refresh_tokens_col.create_index("expires_at", expireAfterSeconds=0)
+        await refresh_tokens_col.create_index("family_id")
+        await wishlists_col.create_index([("user_id", 1), ("course_name", 1)], unique=True)
+    except Exception as e:
+        logger.warning(f"index setup skipped: {e}")
+
     # SEC-005: only auto-seed demo data when explicitly enabled (dev / demo)
     if ENABLE_DEMO_SEED and await users_col.count_documents({}) == 0:
         try:

@@ -1,5 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, clearToken, getToken, saveToken, User } from '@/src/api';
+import {
+  api,
+  clearTokens,
+  getAccessToken,
+  saveTokens,
+  setOnAuthLost,
+  User,
+} from '@/src/api';
 
 type AuthState = {
   user: User | null;
@@ -26,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const bootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const token = await getToken();
+      const token = await getAccessToken();
       if (!token) {
         setUser(null);
       } else {
@@ -34,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(me);
       }
     } catch {
-      await clearToken();
+      await clearTokens();
       setUser(null);
     } finally {
       setLoading(false);
@@ -42,23 +49,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // If the refresh flow gives up (invalid / reused refresh), sign the user out
+    setOnAuthLost(() => {
+      setUser(null);
+    });
     bootstrap();
   }, [bootstrap]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const res = await api.login(email, password);
-    await saveToken(res.access_token);
+    await saveTokens(res.access_token, res.refresh_token);
     setUser(res.user);
   }, []);
 
   const signUp = useCallback(async (payload: Parameters<AuthState['signUp']>[0]) => {
     const res = await api.register(payload);
-    await saveToken(res.access_token);
+    await saveTokens(res.access_token, res.refresh_token);
     setUser(res.user);
   }, []);
 
   const signOut = useCallback(async () => {
-    await clearToken();
+    await api.logout();
     setUser(null);
   }, []);
 

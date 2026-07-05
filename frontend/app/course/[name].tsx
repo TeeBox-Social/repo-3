@@ -22,6 +22,7 @@ import { TBInput } from '@/src/components/TBInput';
 import { RoundCard } from '@/src/components/RoundCard';
 import { StarPicker } from '@/src/components/StarPicker';
 import { StarDisplay } from '@/src/components/StarDisplay';
+import { WishlistButton } from '@/src/components/WishlistButton';
 
 type Filter = 'all' | 'low' | 'mid' | 'high';
 
@@ -174,15 +175,18 @@ export default function CourseDetail() {
                   </View>
                 ) : null}
               </View>
-              <Pressable
-                testID="course-open-maps"
-                onPress={openMaps}
-                style={styles.mapsPill}
-              >
-                <Ionicons name="map" size={15} color={colors.brandDeep} />
-                <Text style={styles.mapsText}>Open in Maps</Text>
-                <Ionicons name="open-outline" size={14} color={colors.brandDeep} />
-              </Pressable>
+              <View style={styles.actionsRow}>
+                <Pressable
+                  testID="course-open-maps"
+                  onPress={openMaps}
+                  style={styles.mapsPill}
+                >
+                  <Ionicons name="map" size={15} color={colors.brandDeep} />
+                  <Text style={styles.mapsText}>Open in Maps</Text>
+                  <Ionicons name="open-outline" size={14} color={colors.brandDeep} />
+                </Pressable>
+                <WishlistButton courseName={courseName} />
+              </View>
             </View>
           </View>
 
@@ -371,6 +375,7 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   mapsText: { color: colors.brandDeep, fontWeight: '800', fontSize: 13 },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
   body: { padding: spacing.xl, gap: spacing.md },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },

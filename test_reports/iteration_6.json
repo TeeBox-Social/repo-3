@@ -1,0 +1,46 @@
+{
+  "summary": "TeeBox iter5 features (rotating refresh tokens, slowapi rate limits, env-driven CORS, wishlist domain) validated end-to-end. Backend: 18/18 pytest cases pass in test_iter6_auth_wishlist.py. CORS with restricted origins verified DIRECTLY against http://localhost:8001 (public preview URL is behind Cloudflare + ingress which strip origin-echo and inject 'access-control-allow-origin: *' — so ACAO cannot be validated on the public URL; the FastAPI origin behaves correctly). Frontend (mobile 375x667): sign-in with reese@teebox.demo works; Course Detail wishlist button toggles 'Add to wishlist' <-> 'On wishlist'; own Profile shows 'Wishlist' section with testID profile-wishlist; other user's profile shows read-only wishlist with testID user-wishlist. Two RN Web deprecation warnings persist (shadow*, pointerEvents) — already noted in iter5 report.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login (rate limit)", "issue": "10/minute limit does not consistently trip for the Python `requests` HTTP client — behind Cloudflare/ingress the same origin's __cf_bm cookie rotation appears to make each Python request look like a fresh connection, softening the per-IP bucket. The limit DOES trip reliably for shell curl (test uses subprocess curl and passes) and for /api/auth/register (5/min) via both clients. Origin behavior is correct; test just uses curl-subprocess."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking. Emitted on Welcome/sign-in and profile screens on RN Web."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — non-blocking, seen post sign-in."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_auth_wishlist.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate shadow*/pointerEvents style props to boxShadow / style.pointerEvents to silence RN Web deprecation warnings.",
+    "(Optional/nice-to-have) If deployment sits behind a proxy that terminates TLS (as here on Cloudflare), consider swapping slowapi's key_func from get_remote_address to a header-aware key (e.g. X-Forwarded-For first-hop or CF-Connecting-IP) so per-IP rate limiting isn't diluted by connection rotation. Not required by playbook."
+  ],
+  "critical_code_review_comments": [
+    "Refresh flow implementation is correct: /api/auth/refresh rotates (sets is_rotated=true on old jti, issues new jti in same family_id). Reusing an already-rotated jti calls update_many({family_id}, {$set:{is_revoked:True}}) and returns 401 with 'Refresh token reuse detected — please sign in again'. Verified: after reuse, the freshly-issued sibling token in the family is also revoked and cannot refresh (returns 401).",
+    "get_current_user correctly rejects tokens with type='refresh' (401) and still accepts legacy tokens with no type claim (payload.get('type') in (None, 'access')).",
+    "slowapi wired properly: app.state.limiter, RateLimitExceeded handler, and @limiter.limit decorators on /auth/login (10/min;60/h) and /auth/register (5/min;20/h). /api/feed unlimited (confirmed 15 rapid calls all 200).",
+    "CORS: CORSMiddleware built from CORS_ALLOWED_ORIGINS env var split by comma. Direct test against localhost:8001 with CORS_ALLOWED_ORIGINS='https://foo.example,https://bar.example' returns ACAO=foo for foo origin and NO ACAO header for evil origin (400 preflight response). .env restored to '*' after test.",
+    "Wishlist: unique index on (user_id, course_name), duplicate add returns {added:false, reason:'already on wishlist'}, GET /users/{id}/wishlist enriches with city/region/country from courses master. GET /users/{id} now includes wishlist_count. Cross-user GET works for any authenticated caller. DELETE /wishlist/{course_name} returns {removed:true|false}.",
+    "server.py now 943 lines — still over the 700-line guideline. Wishlist + refresh added inline; consider splitting into routers/auth.py, routers/wishlist.py in a follow-up refactor (non-blocking).",
+    "Startup ensures refresh_tokens indexes (unique jti, TTL on expires_at, family_id) and wishlists compound unique index — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_auth_wishlist.py (new — 18 pytest cases)",
+    "/app/test_reports/pytest/iter6_results.xml (junit)",
+    "/app/test_reports/iteration_6.json (this report)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% of tested flows (sign-in, feed, discover, course-detail wishlist toggle, own-profile wishlist, other-user-profile wishlist)"},
+  "seed_data_creation": "Auto-seeded demo (ENABLE_DEMO_SEED=true) unchanged. Test suite registers a TEST_wl_* user for wishlist tests (retained). One extra Pacific Dunes wishlist entry left for that user (used to verify read-only cross-user view). Test batches on register also created a handful of TEST_rl_* accounts as expected for the 5/min rate-limit test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend test file: /app/backend/tests/test_iter6_auth_wishlist.py (module-scoped fixtures include a 65s sleep before creating fresh_user so the register 5/min bucket is drained after the register rate-limit test). Total runtime ~4 min due to intentional bucket-drain sleeps. Rate-limit tests use shell curl subprocess — Python requests does not consistently trip login rate limits through Cloudflare (see minor issue). To validate CORS restricted origins you MUST hit the origin directly (localhost:8001); public preview URL rewrites ACAO to '*'. Remember to restore CORS_ALLOWED_ORIGINS='*' and ENABLE_DEMO_SEED='true' in /app/backend/.env after any temporary env flip.",
+  "rca_of_issue": "N/A — no bugs. One test-authoring gotcha resolved during this pass: /api/auth/login rate limit could not be verified with Python `requests` through the preview URL (Cloudflare cookie rotation dilutes per-IP bucket). Switched to shell curl subprocess (matches the auth-playbook curl-based verification) and both /login and /register rate limits trip reliably. Register-fixture had to be sleep-guarded to survive the 5/min register cap chewed up by test_register_rate_limited."
+}

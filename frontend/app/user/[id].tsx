@@ -16,19 +16,26 @@ import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { RoundCard } from '@/src/components/RoundCard';
 import { TBButton } from '@/src/components/TBButton';
+import { WishlistList } from '@/src/components/WishlistList';
 
 export default function UserDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   const [rounds, setRounds] = useState<any[] | null>(null);
+  const [wishlist, setWishlist] = useState<any[] | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, r] = await Promise.all([api.getUser(String(id)), api.getUserRounds(String(id))]);
+      const [p, r, w] = await Promise.all([
+        api.getUser(String(id)),
+        api.getUserRounds(String(id)),
+        api.getUserWishlist(String(id)),
+      ]);
       setProfile(p);
       setRounds(r);
+      setWishlist(w);
     } catch {}
   }, [id]);
 
@@ -137,6 +144,15 @@ export default function UserDetail() {
           />
         </View>
       ) : null}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Wishlist ({wishlist?.length ?? 0})</Text>
+        <WishlistList
+          items={wishlist || []}
+          emptyLabel={`${profile.display_name?.split(' ')[0] || 'They'} haven't added any wishlist courses yet.`}
+          testID="user-wishlist"
+        />
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Rounds</Text>

@@ -18,6 +18,7 @@ import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 import { TBButton } from '@/src/components/TBButton';
 import { RoundCard } from '@/src/components/RoundCard';
+import { WishlistList } from '@/src/components/WishlistList';
 
 export default function Profile() {
   const router = useRouter();
@@ -25,19 +26,22 @@ export default function Profile() {
   const [profile, setProfile] = useState<any>(null);
   const [rounds, setRounds] = useState<any[] | null>(null);
   const [achievements, setAchievements] = useState<any | null>(null);
+  const [wishlist, setWishlist] = useState<any[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const [p, r, a] = await Promise.all([
+      const [p, r, a, w] = await Promise.all([
         api.getUser(user.id),
         api.getUserRounds(user.id),
         api.getUserAchievements(user.id),
+        api.getUserWishlist(user.id),
       ]);
       setProfile(p);
       setRounds(r);
       setAchievements(a);
+      setWishlist(w);
     } catch {}
   }, [user]);
 
@@ -196,6 +200,26 @@ export default function Profile() {
           </ScrollView>
         </View>
       ) : null}
+
+      <View style={styles.section} testID="profile-wishlist">
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Wishlist</Text>
+          <Text style={styles.sectionCount}>{wishlist?.length ?? 0}</Text>
+        </View>
+        <WishlistList
+          items={wishlist || []}
+          onRemove={async (course) => {
+            setWishlist((prev) => (prev || []).filter((w) => w.course_name !== course));
+            try {
+              await api.removeWishlist(course);
+            } catch {
+              // reload to restore truth
+              load();
+            }
+          }}
+          emptyLabel="Bookmark courses from Discover to build your wishlist."
+        />
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your rounds</Text>
