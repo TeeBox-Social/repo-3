@@ -25,13 +25,20 @@ A dedicated social community for golfers: log rounds, share course reviews, and 
 ## Growth Enhancement (Business Angle)
 - **Course Ambassador program** — the golfer with the highest avg star-rating on a course is auto-featured on the course detail. Encourages high-quality reviews and creates a shareable badge (drives referrals to the app). Ready to layer on top of `/api/courses/{name}/reviews`.
 
-## Iteration 2 additions
-- **Log tab icon** normalized to standard `add-circle-outline` (matches sibling tabs, no floating pill).
-- **Hole-by-hole scorecard** — Log Round: toggle-revealed 18-hole grid, auto-sums into total score. Post Detail: read-only color-coded grid (birdie / par / bogey / double).
-- **Mentions in comments** — `@name` autocomplete driven by `/api/discover/users`, tap to insert `@Display_Name`, rendered in brand green inside the comment. Web caret handled declaratively (no `setNativeProps` crash).
-- **Followers-only feed** — Home feed uses `GET /api/feed?scope=followers` (default). No "All" toggle in Home. "All rounds here" section only appears inside Course Detail (via `GET /api/courses/{name}/rounds`).
-- **Achievements & badges** — computed on the fly per user: On the tee, Broke 100/90, First sub-80, Sub-70 club, Regular (10 rounds), Half-century (50 rounds), Course collector (5 courses), Hot streak (3 rounds ≤ 80 in a row).
-- **Seed** now creates mutual follows across the 3 demo users so the followers-only feed is populated on first launch.
+## Iteration 3 additions
+- **Fractional star ratings (0.25 step)** via `StarPicker` (drag or tap) — numeric value shown in a dark pill (e.g. `4.25 / 5.00`). `StarDisplay` renders fractional stars using a clipped overlay.
+- **Handicap filter chips on reviews**: `All · Low (<10) · Mid (10–20) · High (20+)`. No-HC reviewers lumped into All.
+- Each review card shows the reviewer's numeric rating (brand-green pill) and the current course average (`avg X.XX`), tinted green if their rating is above the average, warm-orange if below.
+- **Master course catalog** — 30 famous real courses (Pebble Beach, TPC Sawgrass, Bandon Dunes, St Andrews Old, Bethpage Black, Augusta National, etc.) auto-seeded on empty DB with `city / region / country / lat / lng`.
+- **OpenStreetMap Overpass bulk import** — `POST /api/courses/import-osm?bbox=...` pulls golf courses from the free OSM Overpass API (no key). Dedupes by name.
+- **Open in Maps** pill on Course Detail hero — fires `Linking.openURL` to `google.com/maps/search/?api=1&query=<course>+<city>+<region>` (opens the Google Maps app on iOS/Android, browser on web).
+- Discover Courses list shows `city, region` under each course.
+
+## Iteration 3 API additions
+- `GET /api/courses/{name}` — course metadata (city/region/country/lat/lng) + play_count + review_count + avg_rating.
+- `POST /api/courses/import-osm?bbox=south,west,north,east` — OSM Overpass bulk import.
+- `POST /api/courses/reviews` — `rating` is now `float` in [1.0, 5.0]; server rounds to nearest 0.25.
+- `GET /api/courses/{name}/reviews` — each review's `author` now includes `handicap`.
 
 ## Tech
 - **Backend**: FastAPI + MongoDB (motor). JWT via python-jose. Bcrypt password hashing via passlib.
