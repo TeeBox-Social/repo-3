@@ -57,6 +57,18 @@ A dedicated social community for golfers: log rounds, share course reviews, and 
   - `GET /api/users/{id}` now returns `wishlist_count`.
   - Frontend: `WishlistButton` toggle pill next to "Open in Maps" on Course Detail; horizontal-scroll wishlist section on own Profile (with × remove) and read-only version on another user's profile.
 
+## Iteration 6 — Profile editor, pinned rounds, friends
+- **Profile editor** (`/profile/edit`) — modal form for display name, handicap, home course, bio, avatar (photo picker → base64). Handicap and other clearable fields can now be blanked out (`PATCH /api/auth/me` uses `exclude_unset=True` so an explicit `null` reaches Mongo `$set` while omitted fields stay untouched).
+- **Handicap next to name** — Profile header shows `Reese Callahan · 8.4 HCP` (handicap inline, hidden when null).
+- **New 4-stat row on both own Profile and other users' User Detail** — Rounds / Avg / Courses / Friends. Best score removed from UI (still stored per round). Courses = distinct `course_name` count. Friends = mutual-follow count.
+- **Pin a round to your profile** — `POST /api/rounds/{id}/pin` (owner-only), `DELETE /api/users/me/pin`, both mediated by a "Pin to profile" ↔ "Pinned" pill in the Post Detail header for the round's owner. Pinned round appears with a **"Pinned round"** badge at the top of "Your rounds" on Profile / User Detail. Stale pins auto-clear server-side when the underlying round is deleted.
+- **Friends screen** (`/user/[id]/friends`) — reachable by tapping the Friends stat on any profile. Lists mutual-follow friends of the profile owner with:
+  - "Mutual friend" badge (viewer↔them mutual), "You follow" badge (viewer→them one-way), or "You" pill.
+  - "X mutual with you" summary in the header when viewing someone else.
+  - Per-item Follow/Following toggle button.
+  - Tap the row to jump to that user's profile.
+- Endpoint additions: `GET /api/users/{id}/friends`, `POST /api/rounds/{id}/pin`, `DELETE /api/users/me/pin`.
+
 ## Tech
 - **Backend**: FastAPI + MongoDB (motor). JWT via python-jose. Bcrypt password hashing via passlib.
 - **Frontend**: Expo SDK 54 + expo-router file-based routing. React Native only. `expo-image`, `expo-linear-gradient`, `expo-blur`, `@expo/vector-icons` (Ionicons), `expo-image-picker` (base64 photos), `expo-secure-store`.
