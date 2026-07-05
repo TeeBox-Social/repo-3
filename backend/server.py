@@ -18,6 +18,17 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 
+def _client_ip(request: Request) -> str:
+    """Prefer the real client IP behind proxy/CDN (Cloudflare, ingress) over the socket peer."""
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return get_remote_address(request)
+
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -82,8 +93,8 @@ def public_user(u: dict) -> dict:
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
-# Rate limiter (per remote IP)
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter (per real client IP, proxy-aware)
+limiter = Limiter(key_func=_client_ip)
 
 app = FastAPI()
 app.state.limiter = limiter

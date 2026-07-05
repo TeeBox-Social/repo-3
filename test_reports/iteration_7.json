@@ -1,0 +1,35 @@
+{
+  "summary": "Iter7 proxy-aware rate-limit verification: 8/8 executed tests PASS (3 skipped due to a Cloudflare hard limitation, see below). The fix in /app/backend/server.py — a new `_client_ip(request)` key_func that reads cf-connecting-ip → x-forwarded-for → socket peer — works correctly both at the ORIGIN and through the PUBLIC preview URL. Origin: with cf-connecting-ip=1.2.3.X, /auth/login returned exactly [401×10, 429×2]; a fresh cf-ip=5.6.7.X got [401×10] with no 429s (independent bucket confirmed); /auth/register with cf-ip=9.9.9.X got [200×5, 429×2]; and dropping cf-connecting-ip and using only x-forwarded-for still tripped the limit ([401×10, 429×2]). Public URL (through Cloudflare): with only server-injected forwarding headers, /auth/login also returned [401×10, 429×2] — i.e. slowapi is now correctly keying on the CF-injected real client IP instead of the ingress socket peer. Regressions all green: refresh token rotation reuse-detection (401 + family nuke, sibling also revoked), /auth/logout (revoked refresh returns 401), wishlist add/list/remove CRUD, and /feed + /discover/{users,courses} feed endpoints.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_ratelimit_proxy.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:21-29 — _client_ip is correctly implemented: cf-connecting-ip is trusted first, then x-forwarded-for[0].strip(), then get_remote_address(request). No IP validation is performed but that is acceptable for a rate-limit bucket key (bad input = bad bucket, not a security boundary).",
+    "server.py:97 — limiter = Limiter(key_func=_client_ip) — wired at construction time so every @limiter.limit endpoint uses the proxy-aware key.",
+    "SECURITY NOTE: Trusting client-supplied cf-connecting-ip / x-forwarded-for at the ORIGIN is safe here because the origin is not directly exposed — Cloudflare + ingress terminate all public traffic. However, if this service is ever exposed directly (i.e. the origin becomes internet-reachable without the CF/ingress in front), a caller could spoof cf-connecting-ip to farm unlimited login attempts by rotating the header per request. Consider gating the header trust on either a shared secret / mTLS with the ingress, or on peer IP being in the Cloudflare IP range list. Not required today.",
+    "Cloudflare rejects any incoming request that carries a client-supplied cf-connecting-ip with HTTP 403 + 'error code: 1000'. This means the ONLY way to verify per-IP rate limiting through the public URL is either (a) generate real distinct source IPs (not possible from a single test host), or (b) fire N rapid requests from the same host and rely on CF's own IP injection — which is what the passing public/xff-fallback test does."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_ratelimit_proxy.py (new — 11 pytest cases, 8 run + 3 skip)",
+    "/app/test_reports/pytest/iter7_results.xml (junit)",
+    "/app/test_reports/iteration_7.json (this report)"
+  ],
+  "success_rate": {"backend": "100% executed (8/8 passed, 3 skipped by design due to CF anti-spoof)", "frontend": "not tested this iteration (backend-only per review request)"},
+  "seed_data_creation": "Test created ~5 TEST_rl7_* accounts through /auth/register (before the 5/min bucket tripped). Module-level cleanup fixture deletes users matching /^test_rl7_/i. Also one Pacific Dunes wishlist entry was added+removed for jordan@teebox.demo during the wishlist CRUD regression — net zero.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iter7_ratelimit_proxy.py is idempotent (module-level cleanup) but takes ~6:36 due to intentional 65s bucket-drain sleeps between rate-limit tests. To re-verify quickly, run the origin-only login test in isolation: `pytest backend/tests/test_iter7_ratelimit_proxy.py -k test_login_rate_limit_trips_with_cf_connecting_ip -s`. The public URL rate limit is exercised only via the xff-fallback variant because Cloudflare returns 403 error 1000 on any request that ships a client-set cf-connecting-ip header. Env: EXPO_PUBLIC_BACKEND_URL is loaded from /app/frontend/.env inside the test file (via python-dotenv).",
+  "rca_of_issue": "Prior iter5/iter6 could not reliably trip /auth/login's 10/min limit via the public URL because slowapi's default key_func (get_remote_address) reads request.client.host, which under this deployment is the Kubernetes ingress socket peer — a single stable IP for all traffic. Every real client's requests were being bucketed together, but crucially the bucket key was NOT the real client IP; because the same key was shared globally, hitting >10 rpm from ANY combination of clients would trip 429 (including in tests via cookie rotation), while dedicated per-client throttling did not exist. The applied fix wraps the key_func: check cf-connecting-ip (CF sets this to the true visitor IP) first, then x-forwarded-for[0], then fall back to socket. Verified: at the origin, 12 posts with cf-connecting-ip=X.X.X.X return [401×10, 429×2] and a different cf-connecting-ip gets a clean bucket ([401×10]); through the public URL, 12 posts (CF injects its own cf-connecting-ip / x-forwarded-for = our test host) also return [401×10, 429×2]. Regression suite (refresh reuse, logout, wishlist CRUD, feed) unaffected."
+}
