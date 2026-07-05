@@ -7,6 +7,7 @@ import {
   Pressable,
   TextInputProps,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { colors, radius, shadow, spacing } from '@/src/theme';
@@ -42,6 +43,7 @@ export function MentionInput({
 }: Props) {
   const inputRef = useRef<TextInput | null>(null);
   const [caret, setCaret] = useState(0);
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [mentionIds, setMentionIds] = useState<string[]>([]);
@@ -79,11 +81,20 @@ export function MentionInput({
     const newIds = mentionIds.includes(u.id) ? mentionIds : [...mentionIds, u.id];
     setMentionIds(newIds);
     onMentionsChange?.(newIds);
-    // Move caret past inserted mention + space
+    // Move caret past inserted mention + space (declarative for web, imperative on native)
     const nextCaret = before.length + 1 + insert.length + 1;
-    setTimeout(() => {
-      inputRef.current?.setNativeProps({ selection: { start: nextCaret, end: nextCaret } });
-    }, 0);
+    setCaret(nextCaret);
+    if (Platform.OS === 'web') {
+      setSelection({ start: nextCaret, end: nextCaret });
+      // Clear so we don't fight user typing on subsequent renders
+      setTimeout(() => setSelection(undefined), 0);
+    } else {
+      setTimeout(() => {
+        try {
+          inputRef.current?.setNativeProps?.({ selection: { start: nextCaret, end: nextCaret } });
+        } catch {}
+      }, 0);
+    }
   };
 
   return (
@@ -130,6 +141,7 @@ export function MentionInput({
         value={value}
         onChangeText={onChangeText}
         onSelectionChange={(e) => setCaret(e.nativeEvent.selection.start)}
+        selection={selection}
         style={style}
         placeholderTextColor={colors.muted}
       />

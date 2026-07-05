@@ -1,0 +1,28 @@
+{
+  "summary": "Iter3 re-verify of MentionInput web fix. PASS end-to-end. Signed in as reese@teebox.demo, opened first Feed round, typed '@Jo' in post-comment-input → mention-suggestions dropdown appeared with Jordan Kim (mention-suggest-069b5753-...). Tapping the suggestion inserted '@Jordan_Kim ' into the input with NO red error overlay (previous setNativeProps crash is gone). Appended ' great round!' and tapped post-comment-send: new comment 'Reese Callahan · @Jordan_Kim great round!' appeared in the thread, @Jordan_Kim rendered in brand green (rgb(21,128,61) — colors.brandPrimary), and comment count on the round incremented 1 → 2. Non-blocking console warnings still present ('shadow*' deprecated, 'props.pointerEvents' deprecated) — same as iter2, not related to this fix.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow styles", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Non-blocking, pre-existing from iter2."},
+      {"component": "pointerEvents prop", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, pre-existing from iter2."}
+    ]
+  },
+  "test_report_links": ["/tmp/05_after_pick.png", "/tmp/07_after_send.png"],
+  "action_items": [
+    "(Optional, non-blocking) Migrate remaining shadow* style props to boxShadow and props.pointerEvents to style.pointerEvents to silence RN Web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "MentionInput.tsx now correctly gates caret placement: web uses declarative `selection` state prop cleared on next tick; native still uses guarded setNativeProps in try/catch. Clean fix, no residual imperative calls on web.",
+    "PostDetail onSubmit already updates local comments list and increments round.comment_count optimistically — consistent with the observed 1 → 2 update."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "100% for the mention → submit → highlighted render path"},
+  "seed_data_creation": "None — used existing auto-seeded reese@teebox.demo + jordan@teebox.demo. One extra comment '@Jordan_Kim great round!' was added to the first feed round during the test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter2 blocker is fixed. MentionInput on web now uses declarative selection prop (no setNativeProps on web). Full mention flow (dropdown → pick → insert → submit → styled render → count increment) works on Expo web preview.",
+  "rca_of_issue": "Fixed in MentionInput.tsx: on Platform.OS === 'web', setSelection({start,end}) is used to control TextInput's selection prop, then cleared to undefined on next tick so it does not fight user typing. On native, the original inputRef.current?.setNativeProps?.({selection}) call is preserved (guarded try/catch). This eliminates the 'setNativeProps is not a function' throw on React Native Web and unblocks the comment submit path."
+}
