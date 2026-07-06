@@ -46,6 +46,7 @@ reviews_col = db.course_reviews
 courses_col = db.courses
 refresh_tokens_col = db.refresh_tokens
 wishlists_col = db.wishlists
+import_jobs_col = db.import_jobs
 
 # Auth config
 SECRET_KEY = os.environ["JWT_SECRET_KEY"]
@@ -54,6 +55,11 @@ ACCESS_EXPIRE_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 REFRESH_EXPIRE_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 ENABLE_DEMO_SEED = os.environ.get("ENABLE_DEMO_SEED", "false").lower() in ("1", "true", "yes")
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+# Admins can trigger bulk course imports. Comma-separated list of emails.
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+def is_admin_user(u: Optional[dict]) -> bool:
+    return bool(u and (u.get("email") or "").lower() in ADMIN_EMAILS)
 
 # SEC-001: refuse to boot with a placeholder secret
 _placeholder_tokens = ("change_me", "changeme", "placeholder", "changethis", "your-secret")
@@ -258,6 +264,7 @@ async def register(request: Request, data: RegisterIn):
     refresh = await create_refresh_token(user_id)
     doc.pop("_id", None)
     doc.pop("hashed_password", None)
+    doc["is_admin"] = is_admin_user(doc)
     return {"access_token": access, "refresh_token": refresh, "user": doc}
 
 @api_router.post("/auth/login", response_model=AuthOut)
@@ -270,6 +277,7 @@ async def login(request: Request, data: LoginIn):
     refresh = await create_refresh_token(user["id"])
     user.pop("_id", None)
     user.pop("hashed_password", None)
+    user["is_admin"] = is_admin_user(user)
     return {"access_token": access, "refresh_token": refresh, "user": user}
 
 @api_router.post("/auth/refresh", response_model=AuthOut)
@@ -321,7 +329,7 @@ async def refresh(request: Request, data: RefreshIn):
             {"$set": {"is_revoked": True}},
         )
         raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
-    return {"access_token": new_access, "refresh_token": new_refresh, "user": user}
+    return {"access_token": new_access, "refresh_token": new_refresh, "user": {**user, "is_admin": is_admin_user(user)}}
 
 @api_router.post("/auth/logout")
 async def logout(data: RefreshIn):
@@ -336,7 +344,7 @@ async def logout(data: RefreshIn):
 
 @api_router.get("/auth/me")
 async def me(user=Depends(get_current_user)):
-    return user
+    return {**user, "is_admin": is_admin_user(user)}
 
 @api_router.patch("/auth/me")
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
@@ -355,7 +363,7 @@ async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     if updates:
         await users_col.update_one({"id": user["id"]}, {"$set": updates})
     fresh = await users_col.find_one({"id": user["id"]}, {"_id": 0, "hashed_password": 0})
-    return fresh
+    return {**fresh, "is_admin": is_admin_user(fresh)}
 
 # ---- Rounds ----
 @api_router.post("/rounds")
@@ -842,23 +850,18 @@ async def create_review(data: ReviewIn, user=Depends(get_current_user)):
     return doc
 
 # ---- OSM import ----
-@api_router.post("/courses/import-osm")
-async def import_courses_osm(
-    bbox: str = Query(..., description="south,west,north,east — e.g. 32.5,-117.5,33.5,-116.5"),
-    user=Depends(get_current_user),
-):
-    """Bulk-import golf course names + locations from OpenStreetMap Overpass API (free, no key)."""
-    try:
-        parts = [float(p) for p in bbox.split(",")]
-        if len(parts) != 4:
-            raise ValueError("bbox must have 4 numbers")
-        south, west, north, east = parts
-    except Exception:
-        raise HTTPException(status_code=400, detail="bbox must be 'south,west,north,east'")
+# Overpass API is public/free but heavy queries can 429/timeout. We keep global sweeps
+# well-behaved: 20°×20° tiles, per-tile timeout 60s, 2s pause between tiles, multi-mirror
+# fallback if the primary is down.
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
 
-    import httpx
-    query = f"""
-    [out:json][timeout:30];
+def _overpass_query(south: float, west: float, north: float, east: float, timeout: int = 60) -> str:
+    return f"""
+    [out:json][timeout:{timeout}];
     (
       node["leisure"="golf_course"]({south},{west},{north},{east});
       way["leisure"="golf_course"]({south},{west},{north},{east});
@@ -866,21 +869,33 @@ async def import_courses_osm(
     );
     out center tags;
     """
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as http:
-            resp = await http.post("https://overpass-api.de/api/interpreter", data={"data": query})
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"OSM Overpass error: {e}")
 
+async def _overpass_fetch(query: str, timeout: float = 90.0) -> dict:
+    """Try each Overpass mirror in turn. Raise on all-failed."""
+    import httpx
+    last_err: Optional[str] = None
+    for url in OVERPASS_ENDPOINTS:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as http:
+                resp = await http.post(url, data={"data": query})
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    last_err = f"{url} → {resp.status_code}"
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:  # noqa: BLE001
+            last_err = f"{url} → {e}"
+            continue
+    raise HTTPException(status_code=502, detail=f"OSM Overpass unreachable: {last_err}")
+
+async def _persist_osm_elements(elements: list) -> int:
+    """Insert new courses from an Overpass elements payload; return count inserted."""
     inserted = 0
-    for el in data.get("elements", []):
+    for el in elements or []:
         tags = el.get("tags", {}) or {}
         name = (tags.get("name") or "").strip()
         if not name:
             continue
-        # Skip duplicates
         if await courses_col.find_one({"name": name}):
             continue
         lat = el.get("lat") if el.get("type") == "node" else (el.get("center", {}) or {}).get("lat")
@@ -897,6 +912,256 @@ async def import_courses_osm(
             "created_at": now_iso(),
         })
         inserted += 1
+    return inserted
+
+def _sweep_tiles(tile: int = 20) -> list:
+    """Global sweep tiles: covers -60..70 lat × -180..180 lng."""
+    tiles = []
+    for south in range(-60, 70, tile):
+        for west in range(-180, 180, tile):
+            tiles.append((float(south), float(west), float(south + tile), float(west + tile)))
+    return tiles
+
+# Country bounding boxes: south, west, north, east
+COUNTRY_BBOXES: dict = {
+    "US":   (24.5, -125.0, 49.5, -66.5),
+    "AK":   (54.0, -170.0, 71.5, -130.0),
+    "HI":   (18.5, -161.0, 22.5, -154.5),
+    "CA":   (41.5, -141.0, 60.0, -52.5),
+    "MX":   (14.5, -118.5, 32.7, -86.5),
+    "UK":   (49.5, -8.5, 60.9, 1.8),
+    "IE":   (51.4, -10.6, 55.5, -5.9),
+    "FR":   (41.0, -5.5, 51.5, 9.7),
+    "DE":   (47.2, 5.8, 55.1, 15.1),
+    "ES":   (35.9, -9.5, 43.9, 4.4),
+    "PT":   (36.9, -9.6, 42.2, -6.0),
+    "IT":   (36.6, 6.6, 47.1, 18.6),
+    "NL":   (50.7, 3.3, 53.6, 7.3),
+    "BE":   (49.5, 2.5, 51.6, 6.5),
+    "CH":   (45.8, 5.9, 47.9, 10.5),
+    "AT":   (46.3, 9.5, 49.1, 17.2),
+    "SE":   (55.3, 10.9, 69.1, 24.2),
+    "NO":   (57.9, 4.6, 71.2, 31.3),
+    "DK":   (54.5, 8.0, 57.8, 15.2),
+    "FI":   (59.7, 20.5, 70.1, 31.6),
+    "AU":   (-44.0, 112.0, -10.0, 154.0),
+    "NZ":   (-47.3, 166.3, -34.4, 178.6),
+    "JP":   (30.9, 129.4, 45.6, 145.9),
+    "KR":   (33.1, 125.9, 38.6, 129.6),
+    "CN":   (18.0, 73.5, 53.6, 134.8),
+    "TH":   (5.6, 97.3, 20.5, 105.7),
+    "SG":   (1.2, 103.6, 1.5, 104.1),
+    "IN":   (6.5, 68.1, 35.5, 97.4),
+    "AE":   (22.6, 51.5, 26.1, 56.4),
+    "ZA":   (-35.0, 16.4, -22.1, 32.9),
+    "BR":   (-33.8, -73.9, 5.3, -34.8),
+    "AR":   (-55.1, -73.6, -21.8, -53.6),
+    "CL":   (-55.9, -75.6, -17.5, -66.9),
+    "MA":   (27.7, -13.2, 35.9, -1.0),
+    "TR":   (35.8, 25.7, 42.1, 44.8),
+}
+
+async def _run_import_job(job_id: str, tiles: list, delay_s: float = 2.0) -> None:
+    """Background job: walks tiles, updates progress in Mongo. Supports cancellation."""
+    import asyncio
+    total = len(tiles)
+    processed = 0
+    inserted_total = 0
+    errors = 0
+    try:
+        await import_jobs_col.update_one(
+            {"id": job_id},
+            {"$set": {"status": "running", "total_tiles": total, "started_at": now_iso()}},
+        )
+        for (south, west, north, east) in tiles:
+            latest = await import_jobs_col.find_one({"id": job_id}, {"_id": 0, "status": 1})
+            if latest and latest.get("status") == "cancelled":
+                logger.info(f"import job {job_id} cancelled at tile {processed}/{total}")
+                break
+            try:
+                data = await _overpass_fetch(_overpass_query(south, west, north, east, timeout=60), timeout=90.0)
+                inserted = await _persist_osm_elements(data.get("elements", []))
+                inserted_total += inserted
+            except HTTPException as e:
+                errors += 1
+                logger.warning(f"import job {job_id} tile ({south},{west}) failed: {e.detail}")
+            except Exception as e:  # noqa: BLE001
+                errors += 1
+                logger.warning(f"import job {job_id} tile ({south},{west}) failed: {e}")
+            processed += 1
+            await import_jobs_col.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "processed_tiles": processed,
+                    "inserted": inserted_total,
+                    "errors": errors,
+                    "last_tile": {"south": south, "west": west, "north": north, "east": east},
+                    "updated_at": now_iso(),
+                }},
+            )
+            await asyncio.sleep(delay_s)
+        total_courses = await courses_col.count_documents({})
+        current = await import_jobs_col.find_one({"id": job_id}, {"_id": 0, "status": 1}) or {}
+        final_status = "cancelled" if current.get("status") == "cancelled" else "completed"
+        await import_jobs_col.update_one(
+            {"id": job_id},
+            {"$set": {
+                "status": final_status,
+                "finished_at": now_iso(),
+                "total_courses_after": total_courses,
+            }},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"import job {job_id} crashed: {e}")
+        await import_jobs_col.update_one(
+            {"id": job_id},
+            {"$set": {"status": "failed", "error": str(e)[:500], "finished_at": now_iso()}},
+        )
+
+
+def _require_admin(user: dict) -> None:
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+@api_router.post("/admin/courses/import-osm-global")
+async def admin_import_osm_global(
+    tile: int = Query(20, ge=5, le=40, description="Tile size in degrees"),
+    delay: float = Query(2.0, ge=0.5, le=10.0, description="Seconds to pause between tiles"),
+    user=Depends(get_current_user),
+):
+    """Admin-only: kick off a background world sweep of OSM golf courses."""
+    import asyncio
+    _require_admin(user)
+    active = await import_jobs_col.find_one({"status": {"$in": ["queued", "running"]}}, {"_id": 0, "id": 1})
+    if active:
+        raise HTTPException(status_code=409, detail=f"Import job {active['id']} is already active")
+
+    tiles = _sweep_tiles(tile=tile)
+    job_id = str(uuid.uuid4())
+    await import_jobs_col.insert_one({
+        "id": job_id,
+        "kind": "global",
+        "tile_deg": tile,
+        "status": "queued",
+        "total_tiles": len(tiles),
+        "processed_tiles": 0,
+        "inserted": 0,
+        "errors": 0,
+        "created_at": now_iso(),
+        "triggered_by": user["id"],
+    })
+    asyncio.create_task(_run_import_job(job_id, tiles, delay_s=delay))
+    return {"job_id": job_id, "total_tiles": len(tiles), "status": "queued"}
+
+
+@api_router.post("/admin/courses/import-osm-country")
+async def admin_import_osm_country(
+    country: str = Query(..., description="Country code (US, UK, JP, etc.)"),
+    tile: int = Query(10, ge=2, le=30),
+    delay: float = Query(2.0, ge=0.5, le=10.0),
+    user=Depends(get_current_user),
+):
+    """Admin-only: sweep a single country using a hand-tuned bounding box."""
+    import asyncio
+    _require_admin(user)
+    code = country.upper().strip()
+    if code not in COUNTRY_BBOXES:
+        raise HTTPException(status_code=400, detail=f"Unknown country code. Supported: {sorted(COUNTRY_BBOXES.keys())}")
+    active = await import_jobs_col.find_one({"status": {"$in": ["queued", "running"]}}, {"_id": 0, "id": 1})
+    if active:
+        raise HTTPException(status_code=409, detail=f"Import job {active['id']} is already active")
+
+    south, west, north, east = COUNTRY_BBOXES[code]
+    tiles = []
+    lat = south
+    while lat < north:
+        lng = west
+        while lng < east:
+            tiles.append((lat, lng, min(lat + tile, north), min(lng + tile, east)))
+            lng += tile
+        lat += tile
+    job_id = str(uuid.uuid4())
+    await import_jobs_col.insert_one({
+        "id": job_id,
+        "kind": "country",
+        "country": code,
+        "tile_deg": tile,
+        "status": "queued",
+        "total_tiles": len(tiles),
+        "processed_tiles": 0,
+        "inserted": 0,
+        "errors": 0,
+        "created_at": now_iso(),
+        "triggered_by": user["id"],
+    })
+    asyncio.create_task(_run_import_job(job_id, tiles, delay_s=delay))
+    return {"job_id": job_id, "total_tiles": len(tiles), "country": code, "status": "queued"}
+
+
+@api_router.get("/admin/courses/import-jobs/{job_id}")
+async def admin_get_import_job(job_id: str, user=Depends(get_current_user)):
+    _require_admin(user)
+    job = await import_jobs_col.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@api_router.get("/admin/courses/import-jobs")
+async def admin_list_import_jobs(limit: int = Query(20, ge=1, le=100), user=Depends(get_current_user)):
+    _require_admin(user)
+    cursor = import_jobs_col.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    jobs = [j async for j in cursor]
+    total_courses = await courses_col.count_documents({})
+    return {"jobs": jobs, "total_courses": total_courses}
+
+
+@api_router.post("/admin/courses/import-jobs/{job_id}/cancel")
+async def admin_cancel_import_job(job_id: str, user=Depends(get_current_user)):
+    _require_admin(user)
+    res = await import_jobs_col.update_one(
+        {"id": job_id, "status": {"$in": ["queued", "running"]}},
+        {"$set": {"status": "cancelled", "cancelled_at": now_iso()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Job not found or not cancellable")
+    return {"ok": True}
+
+
+@api_router.get("/admin/courses/stats")
+async def admin_courses_stats(user=Depends(get_current_user)):
+    _require_admin(user)
+    total = await courses_col.count_documents({})
+    by_source: dict = {}
+    async for doc in courses_col.aggregate([{"$group": {"_id": "$source", "n": {"$sum": 1}}}]):
+        by_source[doc["_id"] or "unknown"] = doc["n"]
+    return {"total_courses": total, "by_source": by_source, "supported_countries": sorted(COUNTRY_BBOXES.keys())}
+
+
+# ---- Legacy single-bbox OSM import (kept for compatibility) ----
+@api_router.post("/courses/import-osm")
+async def import_courses_osm(
+    bbox: str = Query(..., description="south,west,north,east — e.g. 32.5,-117.5,33.5,-116.5"),
+    user=Depends(get_current_user),
+):
+    """Bulk-import golf course names + locations from OpenStreetMap Overpass API (free, no key)."""
+    try:
+        parts = [float(p) for p in bbox.split(",")]
+        if len(parts) != 4:
+            raise ValueError("bbox must have 4 numbers")
+        south, west, north, east = parts
+    except Exception:
+        raise HTTPException(status_code=400, detail="bbox must be 'south,west,north,east'")
+
+    try:
+        data = await _overpass_fetch(_overpass_query(south, west, north, east, timeout=30), timeout=45.0)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OSM Overpass error: {e}")
+
+    inserted = await _persist_osm_elements(data.get("elements", []))
     total = await courses_col.count_documents({})
     return {"inserted": inserted, "total_courses": total}
 

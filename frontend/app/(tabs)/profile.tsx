@@ -183,6 +183,23 @@ export default function Profile() {
         />
       </View>
 
+      {user?.is_admin ? (
+        <Pressable
+          testID="profile-admin-courses"
+          onPress={() => router.push('/profile/admin/courses')}
+          style={styles.adminCard}
+        >
+          <View style={styles.adminIcon}>
+            <Ionicons name="cloud-download-outline" size={22} color={colors.brandPrimary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.adminTitle}>Course Library</Text>
+            <Text style={styles.adminSub}>Bulk-import golf courses from OpenStreetMap</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </Pressable>
+      ) : null}
+
       {achievements && achievements.achievements ? (
         <View style={styles.section} testID="profile-achievements">
           <View style={styles.sectionHeaderRow}>
@@ -377,6 +394,27 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   actionsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.md },
+  adminCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.brandTertiary,
+    ...shadow.soft,
+  },
+  adminIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminTitle: { fontSize: 15, fontWeight: '800', color: colors.onBrandTertiary },
+  adminSub: { fontSize: 12, color: colors.onBrandTertiary, opacity: 0.8, marginTop: 2 },
   section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
   pinBadge: {
     flexDirection: 'row',

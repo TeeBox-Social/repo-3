@@ -60,6 +60,7 @@ function ProtectedRouter() {
       <Stack.Screen name="user/[id]/friends" options={{ presentation: 'card' }} />
       <Stack.Screen name="course/[name]" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="profile/admin/courses" options={{ presentation: 'card' }} />
     </Stack>
   );
 }

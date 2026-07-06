@@ -12,6 +12,25 @@ export type User = {
   handicap?: number | null;
   bio?: string;
   avatar?: string | null;
+  is_admin?: boolean;
+};
+
+export type ImportJob = {
+  id: string;
+  kind: 'global' | 'country';
+  country?: string;
+  tile_deg?: number;
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
+  total_tiles: number;
+  processed_tiles: number;
+  inserted: number;
+  errors: number;
+  total_courses_after?: number;
+  created_at: string;
+  started_at?: string;
+  finished_at?: string;
+  updated_at?: string;
+  error?: string;
 };
 
 export async function saveTokens(access: string, refresh: string) {
@@ -164,4 +183,25 @@ export const api = {
   courseInfo: (name: string) => request<any>(`/courses/${encodeURIComponent(name)}`),
   createReview: (payload: { course_name: string; rating: number; text: string }) =>
     request<any>('/courses/reviews', { method: 'POST', body: JSON.stringify(payload) }),
+
+  // ---- Admin: bulk OSM course import ----
+  adminCourseStats: () =>
+    request<{ total_courses: number; by_source: Record<string, number>; supported_countries: string[] }>(
+      '/admin/courses/stats',
+    ),
+  adminImportGlobal: (tile = 20, delay = 2) =>
+    request<{ job_id: string; total_tiles: number; status: string }>(
+      `/admin/courses/import-osm-global?tile=${tile}&delay=${delay}`,
+      { method: 'POST' },
+    ),
+  adminImportCountry: (country: string, tile = 10, delay = 2) =>
+    request<{ job_id: string; total_tiles: number; country: string; status: string }>(
+      `/admin/courses/import-osm-country?country=${encodeURIComponent(country)}&tile=${tile}&delay=${delay}`,
+      { method: 'POST' },
+    ),
+  adminGetJob: (id: string) => request<ImportJob>(`/admin/courses/import-jobs/${id}`),
+  adminListJobs: () =>
+    request<{ jobs: ImportJob[]; total_courses: number }>('/admin/courses/import-jobs'),
+  adminCancelJob: (id: string) =>
+    request<{ ok: boolean }>(`/admin/courses/import-jobs/${id}/cancel`, { method: 'POST' }),
 };
