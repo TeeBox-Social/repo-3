@@ -35,6 +35,20 @@ function runArgs(cmd, args) {
 const INSTALL_FORM = "yarn expo install";
 
 function runPreinstall() {
+  // Skip Emergent's package guard when running inside EAS Build, GitHub Actions,
+  // or other external CI containers. The guard depends on Emergent-specific
+  // infrastructure (rules injection, shim dir) that isn't present there, and
+  // running it can produce noisy failures or interfere with build hooks.
+  if (
+    process.env.EAS_BUILD === "true" ||
+    process.env.EAS_BUILD === "1" ||
+    process.env.EAS_BUILD_PLATFORM ||
+    process.env.EAS_BUILD_PROFILE ||
+    process.env.GITHUB_ACTIONS === "true"
+  ) {
+    process.exit(0);
+  }
+
   const { list, source } = loadRules();
   maybeLogSource(list, source);
 
