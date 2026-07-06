@@ -55,6 +55,9 @@ ACCESS_EXPIRE_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 REFRESH_EXPIRE_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 ENABLE_DEMO_SEED = os.environ.get("ENABLE_DEMO_SEED", "false").lower() in ("1", "true", "yes")
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+# Auto-populate global course library from OSM on first boot when the library is small.
+AUTO_IMPORT_COURSES = os.environ.get("AUTO_IMPORT_COURSES", "true").lower() in ("1", "true", "yes")
+AUTO_IMPORT_THRESHOLD = int(os.environ.get("AUTO_IMPORT_COURSES_THRESHOLD", "500"))
 # Admins can trigger bulk course imports. Comma-separated list of emails.
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 
@@ -856,7 +859,6 @@ async def create_review(data: ReviewIn, user=Depends(get_current_user)):
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
 ]
 
 def _overpass_query(south: float, west: float, north: float, east: float, timeout: int = 60) -> str:
@@ -871,14 +873,23 @@ def _overpass_query(south: float, west: float, north: float, east: float, timeou
     """
 
 async def _overpass_fetch(query: str, timeout: float = 90.0) -> dict:
-    """Try each Overpass mirror in turn. Raise on all-failed."""
+    """Try each Overpass mirror in turn. Raise on all-failed.
+    Overpass etiquette: identify with a stable User-Agent and only re-attempt on
+    rate-limit / server-error / not-acceptable responses."""
     import httpx
+    headers = {
+        # Overpass servers ask clients to identify themselves; anonymous or generic
+        # UAs are sometimes rejected with 406/403.
+        "User-Agent": "TeeBox/1.0 (+https://teebox.app; support@teebox.app)",
+        "Accept": "application/json",
+    }
     last_err: Optional[str] = None
     for url in OVERPASS_ENDPOINTS:
         try:
-            async with httpx.AsyncClient(timeout=timeout) as http:
+            async with httpx.AsyncClient(timeout=timeout, headers=headers) as http:
                 resp = await http.post(url, data={"data": query})
-                if resp.status_code == 429 or resp.status_code >= 500:
+                # 406/403/429/5xx → try next mirror; anything else raise for status
+                if resp.status_code in (403, 406, 429) or resp.status_code >= 500:
                     last_err = f"{url} → {resp.status_code}"
                     continue
                 resp.raise_for_status()
@@ -889,29 +900,35 @@ async def _overpass_fetch(query: str, timeout: float = 90.0) -> dict:
     raise HTTPException(status_code=502, detail=f"OSM Overpass unreachable: {last_err}")
 
 async def _persist_osm_elements(elements: list) -> int:
-    """Insert new courses from an Overpass elements payload; return count inserted."""
+    """Insert new courses from an Overpass elements payload; return count inserted.
+    Idempotent: silently skips duplicates by name (unique index enforces this too)."""
+    from pymongo.errors import DuplicateKeyError
     inserted = 0
     for el in elements or []:
         tags = el.get("tags", {}) or {}
         name = (tags.get("name") or "").strip()
         if not name:
             continue
-        if await courses_col.find_one({"name": name}):
+        if await courses_col.find_one({"name": name}, {"_id": 1}):
             continue
         lat = el.get("lat") if el.get("type") == "node" else (el.get("center", {}) or {}).get("lat")
         lng = el.get("lon") if el.get("type") == "node" else (el.get("center", {}) or {}).get("lon")
-        await courses_col.insert_one({
-            "id": str(uuid.uuid4()),
-            "name": name,
-            "city": tags.get("addr:city"),
-            "region": tags.get("addr:state") or tags.get("addr:region"),
-            "country": tags.get("addr:country"),
-            "lat": lat,
-            "lng": lng,
-            "source": "osm",
-            "created_at": now_iso(),
-        })
-        inserted += 1
+        try:
+            await courses_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "city": tags.get("addr:city"),
+                "region": tags.get("addr:state") or tags.get("addr:region"),
+                "country": tags.get("addr:country"),
+                "lat": lat,
+                "lng": lng,
+                "source": "osm",
+                "created_at": now_iso(),
+            })
+            inserted += 1
+        except DuplicateKeyError:
+            # Another tile inserted this course first — safe to skip.
+            continue
     return inserted
 
 def _sweep_tiles(tile: int = 20) -> list:
@@ -920,6 +937,22 @@ def _sweep_tiles(tile: int = 20) -> list:
     for south in range(-60, 70, tile):
         for west in range(-180, 180, tile):
             tiles.append((float(south), float(west), float(south + tile), float(west + tile)))
+    return tiles
+
+
+def _country_tiles(tile: int = 8) -> list:
+    """All-countries sweep: iterate every known country bbox and subdivide it into
+    Overpass-friendly tiles. Faster and more reliable than a global grid because
+    ocean is skipped naturally and each tile hits a hand-tuned box."""
+    tiles = []
+    for _code, (south, west, north, east) in COUNTRY_BBOXES.items():
+        lat = south
+        while lat < north:
+            lng = west
+            while lng < east:
+                tiles.append((lat, lng, min(lat + tile, north), min(lng + tile, east)))
+                lng += tile
+            lat += tile
     return tiles
 
 # Country bounding boxes: south, west, north, east
@@ -979,7 +1012,7 @@ async def _run_import_job(job_id: str, tiles: list, delay_s: float = 2.0) -> Non
                 logger.info(f"import job {job_id} cancelled at tile {processed}/{total}")
                 break
             try:
-                data = await _overpass_fetch(_overpass_query(south, west, north, east, timeout=60), timeout=90.0)
+                data = await _overpass_fetch(_overpass_query(south, west, north, east, timeout=45), timeout=60.0)
                 inserted = await _persist_osm_elements(data.get("elements", []))
                 inserted_total += inserted
             except HTTPException as e:
@@ -1266,17 +1299,22 @@ async def seed():
         ("Royal Melbourne Golf Club — West", "Black Rock", "VIC", "Australia", -37.9647, 145.0322),
     ]
     for name, city, region, country, lat, lng in catalog:
-        await courses_col.insert_one({
-            "id": str(uuid.uuid4()),
-            "name": name,
-            "city": city,
-            "region": region,
-            "country": country,
-            "lat": lat,
-            "lng": lng,
-            "source": "seed",
-            "created_at": now_iso(),
-        })
+        try:
+            await courses_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "city": city,
+                "region": region,
+                "country": country,
+                "lat": lat,
+                "lng": lng,
+                "source": "seed",
+                "created_at": now_iso(),
+            })
+        except Exception:
+            # Unique index on `name` — safely skip re-seeding a course that already
+            # exists from a previous run or OSM import.
+            continue
 
     return {"seeded": True, "users": len(demo_users), "rounds": len(demo_rounds), "courses": len(catalog)}
 
@@ -1305,8 +1343,37 @@ async def on_startup():
         await refresh_tokens_col.create_index("expires_at", expireAfterSeconds=0)
         await refresh_tokens_col.create_index("family_id")
         await wishlists_col.create_index([("user_id", 1), ("course_name", 1)], unique=True)
+        # Course name uniqueness. First, defensively dedupe existing docs so the
+        # unique index build never fails on a legacy DB.
+        try:
+            async for grp in courses_col.aggregate([
+                {"$group": {"_id": "$name", "ids": {"$push": "$_id"}, "n": {"$sum": 1}}},
+                {"$match": {"n": {"$gt": 1}}},
+            ]):
+                # Keep the first _id, remove the rest
+                extra = grp["ids"][1:]
+                if extra:
+                    await courses_col.delete_many({"_id": {"$in": extra}})
+        except Exception as de:
+            logger.warning(f"course dedupe pass skipped: {de}")
+        await courses_col.create_index("name", unique=True)
+        await import_jobs_col.create_index("status")
+        await import_jobs_col.create_index([("created_at", -1)])
     except Exception as e:
         logger.warning(f"index setup skipped: {e}")
+
+    # Self-heal: any 'queued'/'running' import jobs from a previous process are dead now.
+    # Mark them as 'interrupted' so the UI shows a clean history and a new auto-import
+    # can safely start.
+    try:
+        stale = await import_jobs_col.update_many(
+            {"status": {"$in": ["queued", "running"]}},
+            {"$set": {"status": "interrupted", "finished_at": now_iso()}},
+        )
+        if stale.modified_count:
+            logger.info(f"cleaned up {stale.modified_count} stale import jobs from previous run")
+    except Exception as e:
+        logger.warning(f"stale-job cleanup skipped: {e}")
 
     # SEC-005: only auto-seed demo data when explicitly enabled (dev / demo)
     if ENABLE_DEMO_SEED and await users_col.count_documents({}) == 0:
@@ -1315,6 +1382,54 @@ async def on_startup():
             logger.info("Auto-seeded demo data (ENABLE_DEMO_SEED=true)")
         except Exception as e:
             logger.warning(f"seed failed: {e}")
+
+    # Auto-populate global course library from OpenStreetMap on first boot.
+    # Uses a country-tiled sweep (~8° per tile) which is *much* more reliable than a
+    # global lat/lng grid — hand-tuned country bboxes skip ocean and keep tiles small
+    # enough for Overpass to answer quickly.
+    #
+    # Only runs when:
+    #   - AUTO_IMPORT_COURSES env flag is on (default true)
+    #   - Total courses in DB < AUTO_IMPORT_COURSES_THRESHOLD (default 500)
+    #   - No global sweep has ever completed successfully (idempotency guard)
+    # Runs in background so the API is available immediately.
+    if AUTO_IMPORT_COURSES:
+        try:
+            import asyncio
+            current = await courses_col.count_documents({})
+            # Consider a prior sweep meaningful only if it actually inserted a reasonable number
+            # of courses. If a previous sweep bailed early due to Overpass throttling, we retry.
+            prior = await import_jobs_col.find_one(
+                {"kind": "global", "status": "completed", "inserted": {"$gte": 200}},
+                {"_id": 0, "id": 1, "inserted": 1},
+            )
+            if current < AUTO_IMPORT_THRESHOLD and not prior:
+                tiles = _country_tiles(tile=5)
+                job_id = str(uuid.uuid4())
+                await import_jobs_col.insert_one({
+                    "id": job_id,
+                    "kind": "global",
+                    "tile_deg": 5,
+                    "status": "queued",
+                    "total_tiles": len(tiles),
+                    "processed_tiles": 0,
+                    "inserted": 0,
+                    "errors": 0,
+                    "created_at": now_iso(),
+                    "triggered_by": "system:auto_import",
+                })
+                asyncio.create_task(_run_import_job(job_id, tiles, delay_s=3.0))
+                logger.info(
+                    f"auto-import kicked off: job_id={job_id} tiles={len(tiles)} "
+                    f"(current courses={current}, threshold={AUTO_IMPORT_THRESHOLD})"
+                )
+            else:
+                logger.info(
+                    f"auto-import skipped: current_courses={current} "
+                    f"threshold={AUTO_IMPORT_THRESHOLD} prior_completed={bool(prior)}"
+                )
+        except Exception as e:
+            logger.warning(f"auto-import kickoff failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
