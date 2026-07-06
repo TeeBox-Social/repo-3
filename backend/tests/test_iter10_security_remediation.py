@@ -129,7 +129,6 @@ class TestSEC102FriendsGuard:
 
             r = requests.get(f"{BASE_URL}/api/users/{reese_id}/friends", headers=_hdr(reese))
             assert r.status_code == 200, f"expected 200 got {r.status_code} {r.text[:200]}"
-            names = [f.get("display_name") for f in r.json()]
             # poison user should be present (its display_name None or missing) but no crash
             ids = [f.get("id") for f in r.json()]
             assert poison_id in ids
