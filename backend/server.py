@@ -62,9 +62,29 @@ AUTO_IMPORT_COURSES = os.environ.get("AUTO_IMPORT_COURSES", "true").lower() in (
 AUTO_IMPORT_THRESHOLD = int(os.environ.get("AUTO_IMPORT_COURSES_THRESHOLD", "500"))
 # Admins can trigger bulk course imports. Comma-separated list of emails.
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+# APP_ENV drives production-only safety checks. Any value other than 'production' is
+# treated as development for the boot-time guards below.
+APP_ENV = os.environ.get("APP_ENV", "development").lower()
 
 def is_admin_user(u: Optional[dict]) -> bool:
     return bool(u and (u.get("email") or "").lower() in ADMIN_EMAILS)
+
+# SEC-001: refuse to boot in production with the seeded demo admin combo
+# (`ENABLE_DEMO_SEED=true` + a `@teebox.demo` email in `ADMIN_EMAILS`). The
+# demo user has a hard-coded password so this combination is an unauthenticated
+# admin-takeover path. Dev / staging can still use it freely.
+if APP_ENV == "production":
+    if ENABLE_DEMO_SEED:
+        raise RuntimeError(
+            "SEC-001: ENABLE_DEMO_SEED=true is refused in production. Set "
+            "ENABLE_DEMO_SEED=false (or remove) and create real admin accounts."
+        )
+    _demo_admins = {e for e in ADMIN_EMAILS if e.endswith("@teebox.demo") or e.endswith(".demo")}
+    if _demo_admins:
+        raise RuntimeError(
+            f"SEC-001: ADMIN_EMAILS in production must not include demo addresses ({_demo_admins}). "
+            "Set ADMIN_EMAILS to real production admin email(s)."
+        )
 
 # SEC-001: refuse to boot with a placeholder secret
 _placeholder_tokens = ("change_me", "changeme", "placeholder", "changethis", "your-secret")
@@ -817,7 +837,9 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 @api_router.get("/discover/courses/nearby")
+@limiter.limit("30/minute")
 async def discover_courses_nearby(
+    request: Request,
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(80.0, ge=1, le=500),
@@ -882,7 +904,8 @@ async def discover_courses_nearby(
 
 # ---- Course search (lightweight autocomplete for Log Round) ----
 @api_router.get("/courses/search")
-async def course_search(q: str = "", limit: int = Query(15, ge=1, le=30), user=Depends(get_current_user)):
+@limiter.limit("120/minute")
+async def course_search(request: Request, q: str = "", limit: int = Query(15, ge=1, le=30), user=Depends(get_current_user)):
     """Prefix-friendly course lookup for the Log Round autocomplete.
     Returns verified courses + the current user's own submissions."""
     safe = _safe_query(q, max_len=80)
@@ -1019,7 +1042,8 @@ async def admin_reject_course(course_id: str, data: RejectIn, user=Depends(get_c
 
 # ---- Notifications ----
 @api_router.get("/notifications")
-async def list_notifications(user=Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def list_notifications(request: Request, user=Depends(get_current_user)):
     out = []
     async for n in notifications_col.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(50):
         out.append(n)
@@ -1423,13 +1447,17 @@ async def admin_courses_stats(user=Depends(get_current_user)):
     return {"total_courses": total, "by_source": by_source, "supported_countries": sorted(COUNTRY_BBOXES.keys())}
 
 
-# ---- Legacy single-bbox OSM import (kept for compatibility) ----
+# ---- Legacy single-bbox OSM import (admin only, throttled) ----
 @api_router.post("/courses/import-osm")
+@limiter.limit("10/hour")
 async def import_courses_osm(
+    request: Request,
     bbox: str = Query(..., description="south,west,north,east — e.g. 32.5,-117.5,33.5,-116.5"),
     user=Depends(get_current_user),
 ):
-    """Bulk-import golf course names + locations from OpenStreetMap Overpass API (free, no key)."""
+    """Bulk-import golf course names + locations from OpenStreetMap Overpass API (free, no key).
+    Admin-only: prevents abuse of the outbound Overpass call and DB writes."""
+    _require_admin(user)
     try:
         parts = [float(p) for p in bbox.split(",")]
         if len(parts) != 4:
