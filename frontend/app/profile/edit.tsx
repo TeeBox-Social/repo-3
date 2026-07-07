@@ -169,7 +169,7 @@ export default function ProfileEdit() {
           />
       </KeyboardAwareScrollView>
         {saving ? (
-          <View style={styles.overlay} pointerEvents="none">
+          <View style={[styles.overlay, { pointerEvents: 'none' }]}>
             <ActivityIndicator color={colors.brandPrimary} size="large" />
           </View>
         ) : null}

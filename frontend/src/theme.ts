@@ -1,4 +1,6 @@
 // TeeBox design tokens - mirror of design_guidelines.json for RN.
+import { Platform } from 'react-native';
+
 export const colors = {
   surface: '#FDFCF8',
   onSurface: '#1A1D1C',
@@ -42,28 +44,55 @@ export const radius = {
   pill: 999,
 };
 
-export const shadow = {
-  card: {
+// Cross-platform shadow presets.
+//
+// RN Web (0.76+) deprecates the individual `shadow*` style props in favour of
+// CSS-style `boxShadow`. Native (iOS) still needs the `shadow*` triple + Android
+// still needs `elevation`. `Platform.select` gives us both without triggering
+// the web deprecation warnings.
+const shadowCard = Platform.select({
+  web: {
+    boxShadow: '0px 6px 14px rgba(11, 58, 32, 0.08)',
+  },
+  default: {
     shadowColor: '#0B3A20',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 14,
     elevation: 4,
   },
-  soft: {
+}) as any;
+
+const shadowSoft = Platform.select({
+  web: {
+    boxShadow: '0px 2px 6px rgba(11, 58, 32, 0.06)',
+  },
+  default: {
     shadowColor: '#0B3A20',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
   },
-  floating: {
+}) as any;
+
+const shadowFloating = Platform.select({
+  web: {
+    boxShadow: '0px 10px 22px rgba(11, 58, 32, 0.18)',
+  },
+  default: {
     shadowColor: '#0B3A20',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.18,
     shadowRadius: 22,
     elevation: 10,
   },
+}) as any;
+
+export const shadow = {
+  card: shadowCard,
+  soft: shadowSoft,
+  floating: shadowFloating,
 };
 
 export const fonts = {

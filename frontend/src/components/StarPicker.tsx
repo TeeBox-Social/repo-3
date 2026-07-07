@@ -61,7 +61,7 @@ export function StarPicker({ value, onChange, size = 40, testID }: Props) {
             <Ionicons key={i} name="star-outline" size={size} color={colors.borderStrong} />
           ))}
         </View>
-        <View style={[styles.overlay, { width: `${pct}%` }]} pointerEvents="none">
+        <View style={[styles.overlay, { width: `${pct}%`, pointerEvents: 'none' }]}>
           <View style={styles.row}>
             {[0, 1, 2, 3, 4].map((i) => (
               <Ionicons key={i} name="star" size={size} color={colors.brandSecondary} />

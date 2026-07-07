@@ -32,7 +32,7 @@ export function StarDisplay({
         ))}
       </View>
       {/* Filled overlay clipped to percentage */}
-      <View style={[styles.overlay, { width: `${pct}%` }]} pointerEvents="none">
+      <View style={[styles.overlay, { width: `${pct}%`, pointerEvents: 'none' }]}>
         <View style={styles.row}>
           {[0, 1, 2, 3, 4].map((i) => (
             <Ionicons key={i} name="star" size={size} color={color} />
