@@ -14,6 +14,7 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Attach photos to your round posts",
         "NSCameraUsageDescription": "Attach photos to your round posts",
+        "NSLocationWhenInUseUsageDescription": "Find golf courses near you",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": ["teebox"]
@@ -28,7 +29,7 @@
         "backgroundColor": "#15803D"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["READ_MEDIA_IMAGES"],
+      "permissions": ["READ_MEDIA_IMAGES", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
       "intentFilters": [
         {
           "action": "VIEW",

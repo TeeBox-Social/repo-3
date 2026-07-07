@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import re
+import math
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
@@ -801,6 +802,84 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
     out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
     return out[:60]
 
+
+# ---- Nearby courses (location-based) ----
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in kilometres."""
+    r = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    )
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+@api_router.get("/discover/courses/nearby")
+async def discover_courses_nearby(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(80.0, ge=1, le=500),
+    limit: int = Query(30, ge=1, le=60),
+    user=Depends(get_current_user),
+):
+    """Return courses within a radius, sorted by distance ascending.
+    Uses a lat/lng bounding-box pre-filter then per-candidate haversine so we
+    don't need a 2dsphere index. This scales fine for < ~50k courses."""
+    # Bounding box radius in degrees:
+    # 1° latitude ≈ 111 km; 1° longitude ≈ 111 km * cos(lat)
+    d_lat = radius_km / 111.0
+    cos_lat = max(0.01, math.cos(math.radians(lat)))
+    d_lng = radius_km / (111.0 * cos_lat)
+    box_query = {
+        "lat": {"$gte": lat - d_lat, "$lte": lat + d_lat, "$ne": None},
+        "lng": {"$gte": lng - d_lng, "$lte": lng + d_lng, "$ne": None},
+        "$or": [
+            {"verified": {"$ne": False}},
+            {"submitted_by": user["id"]},
+        ],
+    }
+
+    candidates = []
+    # Cap the scan at 500 candidate docs to keep this cheap on dense areas.
+    async for c in courses_col.find(box_query, {"_id": 0}).limit(500):
+        clat = c.get("lat")
+        clng = c.get("lng")
+        if clat is None or clng is None:
+            continue
+        dist = _haversine_km(lat, lng, clat, clng)
+        if dist > radius_km:
+            continue
+        candidates.append((dist, c))
+
+    candidates.sort(key=lambda x: x[0])
+    out = []
+    for dist, c in candidates[:limit]:
+        name = c["name"]
+        play_count = await rounds_col.count_documents({"course_name": name})
+        avg_rating = None
+        async for x in reviews_col.aggregate([
+            {"$match": {"course_name": name}},
+            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+        ]):
+            avg_rating = round(x["avg"], 2)
+        review_count = await reviews_col.count_documents({"course_name": name})
+        out.append({
+            "course_name": name,
+            "city": c.get("city"),
+            "region": c.get("region"),
+            "country": c.get("country"),
+            "lat": c.get("lat"),
+            "lng": c.get("lng"),
+            "distance_km": round(dist, 1),
+            "play_count": play_count,
+            "review_count": review_count,
+            "avg_rating": avg_rating,
+        })
+    return out
+
+
 # ---- Course search (lightweight autocomplete for Log Round) ----
 @api_router.get("/courses/search")
 async def course_search(q: str = "", limit: int = Query(15, ge=1, le=30), user=Depends(get_current_user)):
@@ -1529,6 +1608,7 @@ async def on_startup():
         except Exception as de:
             logger.warning(f"course dedupe pass skipped: {de}")
         await courses_col.create_index("name", unique=True)
+        await courses_col.create_index([("lat", 1), ("lng", 1)])
         await import_jobs_col.create_index("status")
         await import_jobs_col.create_index([("created_at", -1)])
         await notifications_col.create_index([("user_id", 1), ("created_at", -1)])

@@ -191,6 +191,17 @@ export const api = {
 
   discoverUsers: (q: string) => request<any[]>(`/discover/users?q=${encodeURIComponent(q)}`),
   discoverCourses: (q: string) => request<any[]>(`/discover/courses?q=${encodeURIComponent(q)}`),
+  discoverCoursesNearby: (lat: number, lng: number, radiusKm = 80) =>
+    request<Array<{
+      course_name: string;
+      city?: string | null;
+      region?: string | null;
+      country?: string | null;
+      distance_km: number;
+      play_count: number;
+      review_count: number;
+      avg_rating?: number | null;
+    }>>(`/discover/courses/nearby?lat=${lat}&lng=${lng}&radius_km=${radiusKm}`),
   courseReviews: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/reviews`),
   courseRounds: (name: string) => request<any[]>(`/courses/${encodeURIComponent(name)}/rounds`),
   courseInfo: (name: string) => request<any>(`/courses/${encodeURIComponent(name)}`),

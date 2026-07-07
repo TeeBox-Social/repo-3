@@ -8,15 +8,23 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 
 type Tab = 'golfers' | 'courses';
+type LocationState =
+  | { status: 'idle' }
+  | { status: 'requesting' }
+  | { status: 'denied'; canAskAgain: boolean }
+  | { status: 'granted'; coords: { lat: number; lng: number } }
+  | { status: 'error' };
 
 export default function Discover() {
   const router = useRouter();
@@ -24,6 +32,9 @@ export default function Discover() {
   const [q, setQ] = useState('');
   const [users, setUsers] = useState<any[] | null>(null);
   const [courses, setCourses] = useState<any[] | null>(null);
+  const [nearby, setNearby] = useState<any[] | null>(null);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [loc, setLoc] = useState<LocationState>({ status: 'idle' });
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -44,6 +55,67 @@ export default function Discover() {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
   }, [load]);
+
+  const fetchNearby = useCallback(async () => {
+    setNearbyLoading(true);
+    try {
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setLoc({ status: 'granted', coords });
+      const list = await api.discoverCoursesNearby(coords.lat, coords.lng, 80);
+      setNearby(list);
+    } catch {
+      setLoc({ status: 'error' });
+      setNearby([]);
+    } finally {
+      setNearbyLoading(false);
+    }
+  }, []);
+
+  // Check the current location-permission status (without prompting) once when
+  // the Courses tab becomes active. If already granted, we auto-fetch nearby
+  // courses so the empty-search state is immediately populated.
+  const checkExistingPermission = useCallback(async () => {
+    try {
+      const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        await fetchNearby();
+      } else if (status === 'denied') {
+        setLoc({ status: 'denied', canAskAgain });
+      }
+    } catch {
+      setLoc({ status: 'error' });
+    }
+  }, [fetchNearby]);
+
+  useEffect(() => {
+    if (tab === 'courses' && !q && loc.status === 'idle') {
+      checkExistingPermission();
+    }
+  }, [tab, q, loc.status, checkExistingPermission]);
+
+  const requestLocation = useCallback(async () => {
+    setLoc({ status: 'requesting' });
+    try {
+      const res = await Location.requestForegroundPermissionsAsync();
+      if (res.status === 'granted') {
+        await fetchNearby();
+      } else {
+        setLoc({ status: 'denied', canAskAgain: res.canAskAgain });
+      }
+    } catch {
+      setLoc({ status: 'error' });
+    }
+  }, [fetchNearby]);
+
+  const openSettings = () => {
+    Linking.openSettings().catch(() => {});
+  };
+
+  // Show nearby ONLY on Courses tab when the search bar is empty.
+  const showNearby = tab === 'courses' && !q.trim();
 
   return (
     <View style={styles.container} testID="discover-screen">
@@ -98,7 +170,7 @@ export default function Discover() {
         />
       ) : (
         <FlatList
-          data={courses || []}
+          data={showNearby ? (nearby || []) : (courses || [])}
           keyExtractor={(c) => c.course_name}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
@@ -107,9 +179,123 @@ export default function Discover() {
               onPress={() => router.push(`/course/${encodeURIComponent(item.course_name)}`)}
             />
           )}
-          ListEmptyComponent={loading ? <Spinner /> : <EmptyState label="No courses yet" />}
+          ListHeaderComponent={
+            showNearby ? (
+              <NearbyHeader
+                loc={loc}
+                loading={nearbyLoading}
+                count={nearby?.length ?? 0}
+                onEnable={requestLocation}
+                onOpenSettings={openSettings}
+              />
+            ) : null
+          }
+          ListEmptyComponent={
+            loading || nearbyLoading ? (
+              <Spinner />
+            ) : showNearby && loc.status === 'granted' ? (
+              <EmptyState label="No courses within 80 km — try searching by name." />
+            ) : showNearby ? null : (
+              <EmptyState label="No courses match your search" />
+            )
+          }
         />
       )}
+    </View>
+  );
+}
+
+function NearbyHeader({
+  loc,
+  loading,
+  count,
+  onEnable,
+  onOpenSettings,
+}: {
+  loc: LocationState;
+  loading: boolean;
+  count: number;
+  onEnable: () => void;
+  onOpenSettings: () => void;
+}) {
+  // Idle / not-yet-asked — invite the user
+  if (loc.status === 'idle' || loc.status === 'requesting') {
+    return (
+      <View style={styles.nearbyCard} testID="discover-nearby-enable">
+        <View style={styles.nearbyIcon}>
+          <Ionicons name="location" size={22} color={colors.brandPrimary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.nearbyTitle}>Find courses nearby</Text>
+          <Text style={styles.nearbySub}>
+            Share your location to see the closest tee times. TeeBox never stores your coordinates.
+          </Text>
+        </View>
+        <Pressable
+          onPress={onEnable}
+          style={styles.nearbyBtn}
+          disabled={loc.status === 'requesting'}
+          testID="discover-nearby-enable-btn"
+        >
+          <Text style={styles.nearbyBtnText}>
+            {loc.status === 'requesting' ? 'Locating…' : 'Enable'}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (loc.status === 'denied') {
+    return (
+      <View style={styles.nearbyCard} testID="discover-nearby-denied">
+        <View style={[styles.nearbyIcon, { backgroundColor: colors.surfaceTertiary }]}>
+          <Ionicons name="location-outline" size={22} color={colors.muted} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.nearbyTitle}>Location off</Text>
+          <Text style={styles.nearbySub}>
+            {loc.canAskAgain
+              ? 'Enable location to see courses near you.'
+              : 'Turn on location in Settings to see nearby courses.'}
+          </Text>
+        </View>
+        <Pressable
+          onPress={loc.canAskAgain ? onEnable : onOpenSettings}
+          style={styles.nearbyBtn}
+          testID="discover-nearby-settings-btn"
+        >
+          <Text style={styles.nearbyBtnText}>
+            {loc.canAskAgain ? 'Enable' : 'Open Settings'}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (loc.status === 'error') {
+    return (
+      <View style={styles.nearbyCard}>
+        <View style={[styles.nearbyIcon, { backgroundColor: colors.surfaceTertiary }]}>
+          <Ionicons name="warning-outline" size={22} color={colors.muted} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.nearbyTitle}>Couldn&apos;t get your location</Text>
+          <Text style={styles.nearbySub}>Try again in a moment.</Text>
+        </View>
+        <Pressable onPress={onEnable} style={styles.nearbyBtn}>
+          <Text style={styles.nearbyBtnText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // granted
+  return (
+    <View style={styles.nearbyBanner} testID="discover-nearby-header">
+      <Ionicons name="navigate" size={14} color={colors.brandPrimary} />
+      <Text style={styles.nearbyBannerText}>
+        {loading ? 'Finding nearby courses…' : `${count} course${count === 1 ? '' : 's'} within 80 km`}
+      </Text>
     </View>
   );
 }
@@ -176,6 +362,16 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={11} color={colors.muted} />
             <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+          </View>
+        ) : null}
+        {typeof course.distance_km === 'number' ? (
+          <View style={styles.distancePill}>
+            <Ionicons name="navigate" size={10} color={colors.brandPrimary} />
+            <Text style={styles.distanceText}>
+              {course.distance_km < 1
+                ? `${Math.round(course.distance_km * 1000)} m away`
+                : `${course.distance_km.toFixed(1)} km away`}
+            </Text>
           </View>
         ) : null}
         <Text style={styles.rowSub} numberOfLines={1}>
@@ -283,4 +479,53 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   ratingText: { fontSize: 11, fontWeight: '700', color: colors.onSurfaceTertiary },
+  distancePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  distanceText: { fontSize: 11, fontWeight: '800', color: colors.brandPrimary },
+  nearbyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.soft,
+  },
+  nearbyIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nearbyTitle: { fontSize: 14, fontWeight: '800', color: colors.onSurface },
+  nearbySub: { fontSize: 12, color: colors.muted, marginTop: 2, lineHeight: 16 },
+  nearbyBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+  },
+  nearbyBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  nearbyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+    marginBottom: spacing.md,
+  },
+  nearbyBannerText: { fontSize: 12, fontWeight: '700', color: colors.brandPrimary, letterSpacing: 0.3 },
 });
