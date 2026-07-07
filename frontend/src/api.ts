@@ -61,11 +61,24 @@ export function setOnAuthLost(handler: () => void) {
   onAuthLostHandler = handler;
 }
 
+// Fetch with an abort-controller timeout. Prevents cold-start freezes when the
+// backend is unreachable (offline / DNS / slow network) — a bare fetch() would
+// hang forever and the app would sit on the splash screen indefinitely.
+async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 12000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function performRefresh(): Promise<string | null> {
   const rt = await getRefreshToken();
   if (!rt) return null;
   try {
-    const res = await fetch(`${BASE}/api/auth/refresh`, {
+    const res = await fetchWithTimeout(`${BASE}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: rt }),
@@ -99,7 +112,7 @@ async function request<T>(path: string, opts: RequestInit = {}, auth = true, _re
     const token = await getAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+  const res = await fetchWithTimeout(`${BASE}/api${path}`, { ...opts, headers });
   if (res.status === 401 && auth && !_retry) {
     // Attempt a single refresh + retry
     const newAccess = await refreshAccess();

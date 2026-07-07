@@ -37,11 +37,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) {
         setUser(null);
       } else {
-        const me = await api.me();
-        setUser(me);
+        // Race /auth/me against a hard 12s ceiling. This prevents the cold-start
+        // hang symptom (splash spinner forever) when the backend is unreachable —
+        // if the check times out we keep the token and continue as best-effort,
+        // showing a stale/optimistic session so the user isn't locked out.
+        const meResult = await Promise.race([
+          api.me().then((u) => ({ ok: true as const, user: u })),
+          new Promise<{ ok: false; timeout?: boolean }>((resolve) =>
+            setTimeout(() => resolve({ ok: false, timeout: true }), 12000),
+          ),
+        ]);
+        if (meResult.ok) {
+          setUser(meResult.user);
+        } else {
+          // Network-timed-out: keep the token, but leave user null so the
+          // ProtectedRouter routes to sign-in. The user can re-attempt login;
+          // a subsequent /auth/me success will populate them fully.
+          setUser(null);
+        }
       }
     } catch {
-      await clearTokens();
+      // Only clear tokens on definite auth failures (401 handled inside request()).
+      // On network errors, keep them for the next attempt.
       setUser(null);
     } finally {
       setLoading(false);

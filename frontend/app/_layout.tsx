@@ -15,7 +15,19 @@ LogBox.ignoreAllLogs(true);
 // Required because @expo/vector-icons' componentDidMount fallback fires
 // Font.loadAsync against a broken vendor path if any <Icon> mounts before
 // the family is registered — which throws on Android Expo Go.
-SplashScreen.preventAutoHideAsync();
+try {
+  SplashScreen.preventAutoHideAsync();
+} catch {
+  // Native module can throw on hot reloads / dev builds — safe to ignore.
+}
+
+// Hard safety net: force-hide the splash after 5s even if fonts / auth are
+// still resolving. This eliminates the "app just spins forever" symptom on
+// cold start when the network is unreachable or a native promise never
+// resolves. Without this, users would have to reinstall the app.
+setTimeout(() => {
+  SplashScreen.hideAsync().catch(() => {});
+}, 5000);
 
 function ProtectedRouter() {
   const { user, loading } = useAuth();
@@ -70,12 +82,14 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
 
-  if (!loaded && !error) return null;
-
+  // Render the tree even while fonts are still loading — the splash timer
+  // above will retract the native splash after at most 5s. Falling back to
+  // React tree render means users never see an infinite spinner even if the
+  // font-loading promise never resolves for some reason.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

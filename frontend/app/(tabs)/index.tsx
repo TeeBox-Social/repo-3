@@ -124,7 +124,13 @@ export default function Feed() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brandPrimary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brandPrimary}
+            colors={[colors.brandPrimary]}
+            progressViewOffset={HEADER_H}
+          />
         }
         renderItem={({ item }) => <RoundCard round={item} onLike={() => onLike(item.id)} />}
         ListEmptyComponent={
@@ -193,7 +199,7 @@ const styles = StyleSheet.create({
   },
   headerCtaText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   listContent: {
-    paddingTop: HEADER_H,
+    paddingTop: HEADER_H + spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: 140,
   },
