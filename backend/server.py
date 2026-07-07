@@ -1447,6 +1447,90 @@ async def admin_courses_stats(user=Depends(get_current_user)):
     return {"total_courses": total, "by_source": by_source, "supported_countries": sorted(COUNTRY_BBOXES.keys())}
 
 
+# ---- Admin: one-shot demo data purge (safe cleanup after a mis-seeded prod deploy) ----
+class PurgeIn(BaseModel):
+    domains: Optional[List[str]] = None  # defaults to ["teebox.demo"]
+    dry_run: bool = False
+
+
+@api_router.post("/admin/purge-demo")
+async def admin_purge_demo(data: PurgeIn, user=Depends(get_current_user)):
+    """Delete every user whose email ends in one of the given domains, along with
+    every artefact tied to that user (rounds, likes, comments, follows either
+    direction, notifications, refresh tokens, wishlists, reviews they authored,
+    and any *unverified* courses they submitted).
+
+    Safe to call multiple times — idempotent. Pass `dry_run: true` to see counts
+    without deleting anything. Never touches verified courses (community-verified
+    data is preserved even if the submitter is a demo user).
+    """
+    _require_admin(user)
+    domains = [d.strip().lower().lstrip("@") for d in (data.domains or ["teebox.demo"]) if d.strip()]
+    if not domains:
+        raise HTTPException(status_code=400, detail="At least one domain is required")
+
+    # Regex OR across each domain, escaping any dot/regex metachars.
+    pattern = "|".join(re.escape(d) for d in domains)
+    email_regex = {"$regex": f"@({pattern})$", "$options": "i"}
+    victims_q = {"email": email_regex}
+
+    # Find target users first so we can cascade cleanup by id
+    victims = [u async for u in users_col.find(victims_q, {"_id": 0, "id": 1, "email": 1})]
+    user_ids = [v["id"] for v in victims]
+
+    report: dict = {
+        "domains": domains,
+        "matched_users": len(victims),
+        "matched_emails": [v["email"] for v in victims],
+        "dry_run": data.dry_run,
+    }
+
+    async def _count(col, q):
+        return await col.count_documents(q)
+
+    if user_ids:
+        rounds_q = {"user_id": {"$in": user_ids}}
+        report["rounds"] = await _count(rounds_col, rounds_q)
+        report["likes"] = await _count(likes_col, {"user_id": {"$in": user_ids}})
+        report["comments"] = await _count(comments_col, {"user_id": {"$in": user_ids}})
+        report["follows_from"] = await _count(follows_col, {"follower_id": {"$in": user_ids}})
+        report["follows_to"] = await _count(follows_col, {"target_id": {"$in": user_ids}})
+        report["notifications"] = await _count(notifications_col, {"user_id": {"$in": user_ids}})
+        report["refresh_tokens"] = await _count(refresh_tokens_col, {"user_id": {"$in": user_ids}})
+        report["wishlists"] = await _count(wishlists_col, {"user_id": {"$in": user_ids}})
+        report["reviews"] = await _count(reviews_col, {"author.id": {"$in": user_ids}})
+        report["submitted_courses"] = await _count(
+            courses_col,
+            {"submitted_by": {"$in": user_ids}, "verified": False},
+        )
+    else:
+        report.update({
+            "rounds": 0, "likes": 0, "comments": 0, "follows_from": 0, "follows_to": 0,
+            "notifications": 0, "refresh_tokens": 0, "wishlists": 0, "reviews": 0,
+            "submitted_courses": 0,
+        })
+
+    if data.dry_run or not user_ids:
+        return {"ok": True, **report}
+
+    # Cascade delete. Order: dependent rows first, then the users themselves.
+    await rounds_col.delete_many({"user_id": {"$in": user_ids}})
+    await likes_col.delete_many({"user_id": {"$in": user_ids}})
+    await comments_col.delete_many({"user_id": {"$in": user_ids}})
+    await follows_col.delete_many({"follower_id": {"$in": user_ids}})
+    await follows_col.delete_many({"target_id": {"$in": user_ids}})
+    await notifications_col.delete_many({"user_id": {"$in": user_ids}})
+    await refresh_tokens_col.delete_many({"user_id": {"$in": user_ids}})
+    await wishlists_col.delete_many({"user_id": {"$in": user_ids}})
+    await reviews_col.delete_many({"author.id": {"$in": user_ids}})
+    # Only remove *their unverified* course submissions; verified ones stay.
+    await courses_col.delete_many({"submitted_by": {"$in": user_ids}, "verified": False})
+    # Finally, the users themselves
+    await users_col.delete_many({"id": {"$in": user_ids}})
+
+    return {"ok": True, **report}
+
+
 # ---- Legacy single-bbox OSM import (admin only, throttled) ----
 @api_router.post("/courses/import-osm")
 @limiter.limit("10/hour")
@@ -1664,6 +1748,40 @@ async def on_startup():
             logger.info("Auto-seeded demo data (ENABLE_DEMO_SEED=true)")
         except Exception as e:
             logger.warning(f"seed failed: {e}")
+
+    # Production admin bootstrap: create the initial real admin user if configured.
+    # Reads SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD env vars. Idempotent: skips if
+    # the user already exists. The email is auto-appended to ADMIN_EMAILS so the
+    # user is admin without needing a second env-var edit. Password is NEVER logged.
+    seed_email = (os.environ.get("SEED_ADMIN_EMAIL") or "").strip().lower()
+    seed_password = os.environ.get("SEED_ADMIN_PASSWORD") or ""
+    seed_name = (os.environ.get("SEED_ADMIN_NAME") or "Admin").strip() or "Admin"
+    if seed_email and seed_password:
+        try:
+            existing = await users_col.find_one({"email": seed_email})
+            if existing:
+                logger.info(f"admin bootstrap: user already exists ({seed_email}), skipping")
+            elif len(seed_password) < 8:
+                logger.warning("admin bootstrap: SEED_ADMIN_PASSWORD must be >= 8 chars, skipping")
+            else:
+                doc = {
+                    "id": str(uuid.uuid4()),
+                    "email": seed_email,
+                    "display_name": seed_name,
+                    "hashed_password": pwd_context.hash(seed_password),
+                    "handicap": None,
+                    "bio": None,
+                    "home_course": None,
+                    "avatar": None,
+                    "created_at": now_iso(),
+                }
+                await users_col.insert_one(doc)
+                # Make sure this email is treated as admin at runtime, even if the
+                # operator forgot to add it to ADMIN_EMAILS.
+                ADMIN_EMAILS.add(seed_email)
+                logger.info(f"admin bootstrap: created initial admin user ({seed_email})")
+        except Exception as e:
+            logger.warning(f"admin bootstrap failed: {e}")
 
     # Auto-populate global course library from OpenStreetMap on first boot.
     # Uses a country-tiled sweep (~8° per tile) which is *much* more reliable than a

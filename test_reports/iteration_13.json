@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 13 backend testing — admin bootstrap (SEED_ADMIN_EMAIL/PASSWORD) works perfectly (5/5 tests pass: happy-path, idempotent, short-password skip, ADMIN_EMAILS augmentation, no-env no-op). SEC-001 boot guard still refuses prod + demo-seed combos. POST /api/admin/purge-demo: authz (401/403), dry_run behaviour, and idempotency all correct. Found 3 HIGH-priority bugs in the purge cascade — see backend_issues.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/admin/purge-demo",
+        "issue": "BUG-A (input validation): Empty domains list `{\"domains\": []}` returns 200 instead of 400. Root cause: line 1468 uses `data.domains or [\"teebox.demo\"]` — empty list is falsy in Python so the default kicks in, and the endpoint performs a real purge of @teebox.demo users. This foot-gun WILL nuke prod demo data if a caller ever explicitly sends `[]`. Fix: check `data.domains is not None and len(data.domains) == 0` and raise 400 BEFORE the `or` default, e.g. `if data.domains is not None and len([d for d in data.domains if d.strip()]) == 0: raise HTTPException(400, ...)`.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "POST /api/admin/purge-demo",
+        "issue": "BUG-B (broken review cascade): Server queries `{\"author.id\": {\"$in\": user_ids}}` for course_reviews (lines 1501 count, 1525 delete), but reviews_col docs have a flat `user_id` field (see create_review, line 1120). Result: report[\"reviews\"] is always 0 and demo users' reviews are NEVER deleted. Reproduced by inserting a review with `user_id=sam.id` and running purge — the review survives. Fix: change both queries to `{\"user_id\": {\"$in\": user_ids}}`.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "POST /api/admin/purge-demo",
+        "issue": "BUG-C (broken follows-from cascade): Server queries `{\"follower_id\": {\"$in\": user_ids}}` (lines 1496 count, 1520 delete), but follows_col docs use `user_id` as the follower field (see toggle_follow, line 664). Result: report[\"follows_from\"] is always 0, and outgoing follows from demo users to non-demo users are NEVER deleted. Follows where demo users are the TARGET *are* deleted correctly (target_id branch works). Reproduced by inserting a follow with `{user_id: jordan.id, target_id: <non-demo>}` — the follow survives. Fix: change both queries to `{\"user_id\": {\"$in\": user_ids}}` (rename report key too, or keep for API compat).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/purge-demo",
+        "issue": "Response omits `matched_users` field when caller supplies no auth-bypassing input path — it's always present in current impl, but the KeyError I initially hit during testing suggests a defensive `.get(\"matched_users\", 0)` in clients. Not a server-side issue but worth documenting."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_admin_bootstrap_purge.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [
+    "Fix BUG-A: reject empty `domains: []` with 400 BEFORE the `or [\"teebox.demo\"]` default. Currently a very dangerous foot-gun — a caller passing `[]` gets a real purge.",
+    "Fix BUG-B: change `author.id` → `user_id` in the review count (line 1501) and delete (line 1525) queries inside admin_purge_demo.",
+    "Fix BUG-C: change `follower_id` → `user_id` in the follows-from count (line 1496) and delete (line 1520) queries inside admin_purge_demo.",
+    "Consider having admin_purge_demo return per-collection counts of what was ACTUALLY deleted (delete_many returns .deleted_count) so operators can trust the report. The current implementation counts BEFORE the delete but never confirms — combined with the field-name bugs above this masks the failure."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1837 lines — should be split into modules (auth, rounds, courses, admin, osm_import) for maintainability. Not blocking but flagged repeatedly across iterations.",
+    "admin_purge_demo mixes count queries with delete queries using the same field names — a single constant/helper `_victim_query(user_ids)` per collection would prevent the count/delete drift we see with `author.id` vs `user_id`.",
+    "SEED_ADMIN_PASSWORD length check (>= 8) is fine but there's no complexity check. Not a bug for the acceptance criteria but worth noting for a future hardening pass.",
+    "Password is correctly hashed with bcrypt (verified `pwd_context.verify` works) and is not logged — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_admin_bootstrap_purge.py (new)"
+  ],
+  "success_rate": {
+    "backend": "82% (14/17 pass; 3 bug-detecting assertions fail as intended)",
+    "frontend": "N/A (backend-only test scope)"
+  },
+  "seed_data_creation": "Demo users (reese/jordan/sam @teebox.demo) were deleted during the purge tests and then restored via direct pymongo insert (TestZzzRestore + a final restore step). Verified reese/sam login works at end of run. teebox_db users_col contains the 3 demo users + ~39 other real users at test-run end.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The 3 purge cascade bugs (A/B/C) are covered by concrete tests that inspect Mongo directly. If main agent fixes them, TestPurgeAuthz::test_empty_domains_400 and TestPurgeCascadeFields::test_follows_and_reviews_are_actually_deleted should flip to PASS. Also TestPurgeHappyPath::test_purge_deletes_demo_users_and_artefacts will run properly once matched_users > 0 (currently skipped because TestPurgeCascadeFields consumes the demo users first — that's fine, the cascade test covers the destructive-purge path). Bootstrap tests run in-process against scratch DBs, safe to re-run.",
+  "rca_of_issue": "BUG-A: `data.domains or [\"teebox.demo\"]` — Python truthiness on empty list falls through to default; the `if not domains: raise 400` check on the following line therefore only fires when domains contains only whitespace-y strings, never on `[]`. BUG-B: schema mismatch between review author storage (`user_id`) and cascade query (`author.id`) — presumably the endpoint author assumed reviews embed the full author dict, but reviews only carry a flat `user_id`. BUG-C: same class of schema-mismatch — the developer used `follower_id` (a common name in follow-graph schemas) but this codebase uses `user_id` throughout the follows_col. A shared helper for victim-queries per collection would prevent this class of bug."
+}
