@@ -243,6 +243,33 @@ class TestPurgeAuthz:
             "and defaults to teebox.demo domain."
         )
 
+    def test_null_domains_defaults_to_teebox_demo(self, admin_token):
+        """BUG-A positive verification: explicit null must still default."""
+        r = requests.post(
+            f"{LOCAL_API}/admin/purge-demo",
+            json={"domains": None, "dry_run": True},
+            headers=_auth(admin_token), timeout=15,
+        )
+        assert r.status_code == 200, f"expected 200 for null-domains, got {r.status_code}: {r.text}"
+        body = r.json()
+        assert body["domains"] == ["teebox.demo"], body
+        assert body["matched_users"] > 0, (
+            f"Expected demo users to match; got body={body}. "
+            "Either demo users are missing or the null-default path broke."
+        )
+
+    def test_omitted_domains_defaults_to_teebox_demo(self, admin_token):
+        """BUG-A positive verification: omitting the field is same as null."""
+        r = requests.post(
+            f"{LOCAL_API}/admin/purge-demo",
+            json={"dry_run": True},
+            headers=_auth(admin_token), timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["domains"] == ["teebox.demo"], body
+        assert body["matched_users"] > 0, body
+
 
 class TestPurgeDryRun:
     def test_dry_run_reports_but_deletes_nothing(self, admin_token):
@@ -320,6 +347,16 @@ class TestPurgeCascadeFields:
             headers=_auth(admin_token), timeout=30,
         )
         assert r.status_code == 200, r.text
+        body = r.json()
+
+        # BUG-B positive verification: reviews count in response reflects the seeded review
+        assert body.get("reviews", 0) >= 1, (
+            f"BUG-B: response body must count sam's review. body={body}"
+        )
+        # BUG-C positive verification: follows_from count in response reflects the seeded follow
+        assert body.get("follows_from", 0) >= 1, (
+            f"BUG-C: response body must count jordan's outgoing follow. body={body}"
+        )
 
         # Check the cascade
         remaining_follow = db.follows.find_one(

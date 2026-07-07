@@ -1465,7 +1465,14 @@ async def admin_purge_demo(data: PurgeIn, user=Depends(get_current_user)):
     data is preserved even if the submitter is a demo user).
     """
     _require_admin(user)
-    domains = [d.strip().lower().lstrip("@") for d in (data.domains or ["teebox.demo"]) if d.strip()]
+    # Explicit is not None check — an empty list `[]` should be a 400, NOT a
+    # silent fall-through to the demo default (foot-gun: caller intended a
+    # no-op but the truthy default would wipe demo data).
+    if data.domains is None:
+        raw_domains = ["teebox.demo"]
+    else:
+        raw_domains = data.domains
+    domains = [d.strip().lower().lstrip("@") for d in raw_domains if d and d.strip()]
     if not domains:
         raise HTTPException(status_code=400, detail="At least one domain is required")
 
@@ -1493,12 +1500,14 @@ async def admin_purge_demo(data: PurgeIn, user=Depends(get_current_user)):
         report["rounds"] = await _count(rounds_col, rounds_q)
         report["likes"] = await _count(likes_col, {"user_id": {"$in": user_ids}})
         report["comments"] = await _count(comments_col, {"user_id": {"$in": user_ids}})
-        report["follows_from"] = await _count(follows_col, {"follower_id": {"$in": user_ids}})
+        # Both follow-directions use `user_id` (follower) + `target_id` (followee)
+        report["follows_from"] = await _count(follows_col, {"user_id": {"$in": user_ids}})
         report["follows_to"] = await _count(follows_col, {"target_id": {"$in": user_ids}})
         report["notifications"] = await _count(notifications_col, {"user_id": {"$in": user_ids}})
         report["refresh_tokens"] = await _count(refresh_tokens_col, {"user_id": {"$in": user_ids}})
         report["wishlists"] = await _count(wishlists_col, {"user_id": {"$in": user_ids}})
-        report["reviews"] = await _count(reviews_col, {"author.id": {"$in": user_ids}})
+        # Reviews docs are flat with `user_id` (author). No nested `author.id`.
+        report["reviews"] = await _count(reviews_col, {"user_id": {"$in": user_ids}})
         report["submitted_courses"] = await _count(
             courses_col,
             {"submitted_by": {"$in": user_ids}, "verified": False},
@@ -1517,12 +1526,12 @@ async def admin_purge_demo(data: PurgeIn, user=Depends(get_current_user)):
     await rounds_col.delete_many({"user_id": {"$in": user_ids}})
     await likes_col.delete_many({"user_id": {"$in": user_ids}})
     await comments_col.delete_many({"user_id": {"$in": user_ids}})
-    await follows_col.delete_many({"follower_id": {"$in": user_ids}})
+    await follows_col.delete_many({"user_id": {"$in": user_ids}})
     await follows_col.delete_many({"target_id": {"$in": user_ids}})
     await notifications_col.delete_many({"user_id": {"$in": user_ids}})
     await refresh_tokens_col.delete_many({"user_id": {"$in": user_ids}})
     await wishlists_col.delete_many({"user_id": {"$in": user_ids}})
-    await reviews_col.delete_many({"author.id": {"$in": user_ids}})
+    await reviews_col.delete_many({"user_id": {"$in": user_ids}})
     # Only remove *their unverified* course submissions; verified ones stay.
     await courses_col.delete_many({"submitted_by": {"$in": user_ids}, "verified": False})
     # Finally, the users themselves

@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 14 re-verification of iter13 fixes — all 3 HIGH-priority bugs in POST /api/admin/purge-demo are now CONFIRMED FIXED. BUG-A: empty `{\"domains\": []}` now returns 400; `null` and omitted default correctly to teebox.demo (matched_users > 0). BUG-B: sam's seeded review is deleted AND response reports reviews >= 1. BUG-C: jordan's outgoing follow (user_id/target_id) is deleted AND response reports follows_from >= 1. All regression tests still pass (admin bootstrap 5/5, SEC-001 boot guard 2/2, purge authz 3/3, purge dry_run 2/2, purge idempotency, SEC-002 admin gate on /api/courses/import-osm — 401 unauth, 403 non-admin verified via curl). Demo users re-seeded and healthy (reese/jordan/sam @teebox.demo, password123 login works). 17 passed, 1 skipped (harmless: TestPurgeHappyPath is superseded by TestPurgeCascadeFields which consumes the demo users first — TestZzzRestore re-seeds them).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_admin_bootstrap_purge.py",
+    "/app/test_reports/pytest/iter14_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fixes are minimal, well-placed and correct (server.py lines 1471-1477 for BUG-A, 1510+1534 for BUG-B, 1504+1529 for BUG-C). The explicit `if data.domains is None` + trailing `if not domains: raise 400` pattern correctly separates the 'omitted/null → default' path from the '[] → 400' path.",
+    "Standing recommendation from iter13 (still valid, not blocking): admin_purge_demo counts documents BEFORE deleting but never verifies delete_many().deleted_count. A future hardening pass could return actual deleted counts so operators can trust the report.",
+    "server.py is 1846 lines — split into modules (auth, rounds, courses, admin, osm_import) recommended, but non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_admin_bootstrap_purge.py (added test_null_domains_defaults_to_teebox_demo, test_omitted_domains_defaults_to_teebox_demo, and follows_from/reviews response-body assertions in the cascade test)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 executed pass; 1 test skipped by-design because prior test consumed the demo users — this was previously covered by iter13 report and is expected)",
+    "frontend": "N/A (backend-only scope)"
+  },
+  "seed_data_creation": "Demo users are consumed by TestPurgeCascadeFields (real purge) and restored by TestZzzRestore via direct pymongo insert + bcrypt hash. Verified reese@teebox.demo, jordan@teebox.demo, sam@teebox.demo all present at end of run (42 total users in teebox_db). Login for reese confirmed working post-restore.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter13 purge-demo bug fixes are fully verified. Test file /app/backend/tests/test_iter13_admin_bootstrap_purge.py is stable and self-restoring (TestZzzRestore ensures demo users are put back). The one SKIPPED test (TestPurgeHappyPath::test_purge_deletes_demo_users_and_artefacts) is expected — cascade test purges first. Not a bug. SEC-002 admin gate on /api/courses/import-osm verified via curl: 401 for unauth, 403 for non-admin sam."
+}
