@@ -54,9 +54,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: 'More',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'menu' : 'menu-outline'} size={24} color={color} />
           ),
           tabBarButtonTestID: 'tab-profile',
         }}

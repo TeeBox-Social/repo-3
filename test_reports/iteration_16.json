@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only regression for 8 UI/UX changes. All 8 features PASS end-to-end via Playwright on mobile viewport (390x844) against the public preview URL. Sign-in demo hint removed, inputs start empty. Show/hide password toggle flips input type password<->text (RN-Web removes type attr when secureTextEntry=false, then restores 'password' on toggle back). Remember-Me flow verified end-to-end: sam@teebox.demo/password123 sign-in with checkbox ON persists teebox_remember_me='1', teebox_remember_email, teebox_remember_password across sign-out, and both fields plus checkbox rehydrate on next visit; toggling OFF and re-signing removes all three keys and clears inputs. Feed header now shows 'header-my-profile' (person icon + 'My Profile' text) navigating to /profile; legacy 'header-log-round' testID is gone; notification bell still present. Top-of-feed spacing updated (HEADER_H + spacing.lg) visually matches inter-post gap. Discover defaults to Courses chip first with 'Search courses…' placeholder. Miles conversion works: 30 courses within 50 mi banner + distance pills read 'X.X mi away' (verified with San Diego geolocation seeded — Executive/Balboa/Championship etc. all show mi). Bottom-right tab reads 'More' with menu icon. Wrong-password sign-in shows 'Incorrect email or password'. No React Native red screens. Two non-blocking runtime warnings observed in console (informational only): 'shadow* style props are deprecated' and 'props.pointerEvents is deprecated' — from RN-Web layer, not from the 8 changes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "React Native Web console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Not caused by the current changes but surfaces frequently on Sign-in/Feed/Discover; consider migrating to boxShadow in the shared shadow theme. Reference: /app/frontend/src/theme (shadow.soft) used across TBButton, cards, header CTA."},
+      {"component": "props.pointerEvents", "issue": "React Native Web console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Emitted on Feed load; likely from a third-party component (Ionicons/BlurView). Not from the 8 changes but worth flagging."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_16.json"],
+  "action_items": [
+    "None required for the 8 requested changes — all verified passing.",
+    "(Optional) Migrate 'shadow*' style props to 'boxShadow' in /app/frontend/src/theme to silence RN-Web deprecation warning.",
+    "(Optional) Track down the 'props.pointerEvents' warning source (likely BlurView or Ionicons wrapper) for a future cleanup pass."
+  ],
+  "critical_code_review_comments": [
+    "sign-in.tsx correctly waits for a successful signIn() before calling persistRemember(), so a bad password never writes credentials to storage.",
+    "Password persistence uses storage.secureSet (SecureStore on native, localStorage polyfill on web preview) — expected and acceptable per task note.",
+    "Feed header's 'My Profile' Pressable uses router.push('/(tabs)/profile'), matching the destination of the 'More' tab — parity confirmed.",
+    "Discover default tab initialization uses useState<Tab>('courses') and chip render order ['courses', 'golfers'] — both sources of truth aligned.",
+    "Distance formatting handles three ranges correctly: <0.1 mi -> feet, <10 mi -> 1 decimal, >=10 mi -> whole miles."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "100%"},
+  "seed_data_creation": "None. Used pre-seeded demo account sam@teebox.demo / password123.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 8 UI/UX changes for iteration verified. Playwright flow: fresh sign-in (verify empty inputs + no demo hint) -> toggle password eye -> sign-in with Remember ON -> observe Feed header-my-profile CTA + navigation -> Discover defaults to Courses -> seed geolocation (32.7157,-117.1611) -> verify 'mi away' pills + '50 mi' banner -> sign-out via profile-signout -> confirm rehydrate -> sign-in with Remember OFF -> sign-out -> confirm cleared. Bad password shows 'Incorrect email or password'. Storage keys: teebox_remember_me / teebox_remember_email / teebox_remember_password (localStorage on web).",
+  "rca_of_issue": "N/A — no bugs found."
+}

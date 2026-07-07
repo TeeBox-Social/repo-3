@@ -105,12 +105,12 @@ export default function Feed() {
           ) : null}
         </Pressable>
         <Pressable
-          testID="header-log-round"
-          onPress={() => router.push('/(tabs)/log')}
+          testID="header-my-profile"
+          onPress={() => router.push('/(tabs)/profile')}
           style={styles.headerCta}
         >
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.headerCtaText}>Log round</Text>
+          <Ionicons name="person" size={18} color="#fff" />
+          <Text style={styles.headerCtaText}>My Profile</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   listContent: {
-    paddingTop: HEADER_H + spacing.md,
+    paddingTop: HEADER_H + spacing.lg,
     paddingHorizontal: spacing.lg,
     paddingBottom: 140,
   },

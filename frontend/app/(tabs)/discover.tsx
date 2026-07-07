@@ -28,7 +28,7 @@ type LocationState =
 
 export default function Discover() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('golfers');
+  const [tab, setTab] = useState<Tab>('courses');
   const [q, setQ] = useState('');
   const [users, setUsers] = useState<any[] | null>(null);
   const [courses, setCourses] = useState<any[] | null>(null);
@@ -144,7 +144,7 @@ export default function Discover() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipsRow}
           >
-            {(['golfers', 'courses'] as Tab[]).map((t) => (
+            {(['courses', 'golfers'] as Tab[]).map((t) => (
               <Pressable
                 key={t}
                 testID={`discover-tab-${t}`}
@@ -194,7 +194,7 @@ export default function Discover() {
             loading || nearbyLoading ? (
               <Spinner />
             ) : showNearby && loc.status === 'granted' ? (
-              <EmptyState label="No courses within 80 km — try searching by name." />
+              <EmptyState label="No courses within 50 mi — try searching by name." />
             ) : showNearby ? null : (
               <EmptyState label="No courses match your search" />
             )
@@ -294,7 +294,7 @@ function NearbyHeader({
     <View style={styles.nearbyBanner} testID="discover-nearby-header">
       <Ionicons name="navigate" size={14} color={colors.brandPrimary} />
       <Text style={styles.nearbyBannerText}>
-        {loading ? 'Finding nearby courses…' : `${count} course${count === 1 ? '' : 's'} within 80 km`}
+        {loading ? 'Finding nearby courses…' : `${count} course${count === 1 ? '' : 's'} within 50 mi`}
       </Text>
     </View>
   );
@@ -368,9 +368,14 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
           <View style={styles.distancePill}>
             <Ionicons name="navigate" size={10} color={colors.brandPrimary} />
             <Text style={styles.distanceText}>
-              {course.distance_km < 1
-                ? `${Math.round(course.distance_km * 1000)} m away`
-                : `${course.distance_km.toFixed(1)} km away`}
+              {(() => {
+                const mi = course.distance_km * 0.621371;
+                if (mi < 0.1) {
+                  // Sub-tenth-mile → show feet for a friendly close-range readout.
+                  return `${Math.round(mi * 5280)} ft away`;
+                }
+                return `${mi.toFixed(mi < 10 ? 1 : 0)} mi away`;
+              })()}
             </Text>
           </View>
         ) : null}
