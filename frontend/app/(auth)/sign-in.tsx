@@ -3,12 +3,10 @@ import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Dimensions,
   Pressable,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -58,11 +56,11 @@ export default function SignIn() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.form}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={20}
       >
-        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Text style={styles.formTitle}>Welcome back</Text>
           <TBInput
             label="Email"
@@ -101,8 +99,7 @@ export default function SignIn() {
           <Text style={styles.demoHint}>
             Demo: reese@teebox.demo · password123
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

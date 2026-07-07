@@ -26,12 +26,17 @@ export default function Feed() {
   const [rounds, setRounds] = useState<any[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unread, setUnread] = useState(0);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await api.feed('followers');
+      const [data, notif] = await Promise.all([
+        api.feed('followers'),
+        api.listNotifications().catch(() => ({ unread: 0, notifications: [] })),
+      ]);
       setRounds(data);
+      setUnread(notif.unread || 0);
     } catch (e: any) {
       setError(e?.message || 'Failed to load feed');
     }
@@ -86,6 +91,19 @@ export default function Feed() {
           <Text style={styles.hello}>Hi {user?.display_name?.split(' ')[0] || 'Golfer'}</Text>
           <Text style={styles.headerTitle}>The Feed</Text>
         </View>
+        <Pressable
+          testID="header-notifications"
+          onPress={() => router.push('/notifications')}
+          style={styles.bellBtn}
+          hitSlop={6}
+        >
+          <Ionicons name="notifications-outline" size={22} color={colors.onSurface} />
+          {unread > 0 ? (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{unread > 9 ? '9+' : String(unread)}</Text>
+            </View>
+          ) : null}
+        </Pressable>
         <Pressable
           testID="header-log-round"
           onPress={() => router.push('/(tabs)/log')}
@@ -198,6 +216,29 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   headerCtaText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  bellBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#c0392b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  bellBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   listContent: {
     paddingTop: HEADER_H + spacing.md,
     paddingHorizontal: spacing.lg,

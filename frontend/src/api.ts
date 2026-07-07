@@ -197,6 +197,43 @@ export const api = {
   createReview: (payload: { course_name: string; rating: number; text: string }) =>
     request<any>('/courses/reviews', { method: 'POST', body: JSON.stringify(payload) }),
 
+  // ---- Course search / community submission ----
+  searchCourses: (q: string) =>
+    request<Array<{
+      id: string;
+      name: string;
+      city?: string | null;
+      region?: string | null;
+      country?: string | null;
+      par?: number | null;
+      verified: boolean;
+      submitted_by_me: boolean;
+    }>>(`/courses/search?q=${encodeURIComponent(q)}`),
+  submitCourse: (payload: { name: string; par: number; city?: string; region?: string; country?: string }) =>
+    request<{ course: any; created: boolean }>('/courses', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // ---- Notifications ----
+  listNotifications: () =>
+    request<{ notifications: Array<{ id: string; type: string; title: string; body: string; read: boolean; created_at: string; course_name?: string; reason?: string }>; unread: number }>('/notifications'),
+  markNotificationRead: (id: string) =>
+    request<{ ok: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    request<{ ok: boolean }>('/notifications/read-all', { method: 'POST' }),
+
+  // ---- Admin: pending courses ----
+  adminListPendingCourses: () =>
+    request<Array<{ id: string; name: string; par: number; city?: string; region?: string; country?: string; submitted_by_name?: string; created_at: string; round_count: number }>>('/admin/courses/pending'),
+  adminVerifyCourse: (id: string) =>
+    request<{ ok: boolean }>(`/admin/courses/${id}/verify`, { method: 'POST' }),
+  adminRejectCourse: (id: string, reason: string) =>
+    request<{ ok: boolean }>(`/admin/courses/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
   // ---- Admin: bulk OSM course import ----
   adminCourseStats: () =>
     request<{ total_courses: number; by_source: Record<string, number>; supported_countries: string[] }>(

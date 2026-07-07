@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { LogBox, StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
@@ -73,6 +74,7 @@ function ProtectedRouter() {
       <Stack.Screen name="course/[name]" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
       <Stack.Screen name="profile/admin/courses" options={{ presentation: 'card' }} />
+      <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
     </Stack>
   );
 }
@@ -92,12 +94,14 @@ export default function RootLayout() {
   // font-loading promise never resolves for some reason.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar barStyle="dark-content" />
-        <AuthProvider>
-          <ProtectedRouter />
-        </AuthProvider>
-      </SafeAreaProvider>
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <StatusBar barStyle="dark-content" />
+          <AuthProvider>
+            <ProtectedRouter />
+          </AuthProvider>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Pressable,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,6 +18,7 @@ import { colors, radius, shadow, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { HoleGrid } from '@/src/components/HoleGrid';
+import { CourseAutocomplete } from '@/src/components/CourseAutocomplete';
 import { api } from '@/src/api';
 
 // This screen doubles as the Share Intent target.
@@ -39,6 +38,7 @@ export default function LogRound() {
   }>();
 
   const [courseName, setCourseName] = useState('');
+  const [courseSelected, setCourseSelected] = useState(false);
   const [totalScore, setTotalScore] = useState('');
   const [par, setPar] = useState('72');
   const [holes, setHoles] = useState('18');
@@ -54,7 +54,12 @@ export default function LogRound() {
   const [err, setErr] = useState<string | null>(null);
 
   const applyPrefill = useCallback(() => {
-    if (params.course) setCourseName(String(params.course));
+    if (params.course) {
+      setCourseName(String(params.course));
+      // Prefill from share-intent: treat the course as selected since the source
+      // app (Garmin/Grint) has already normalised the name.
+      setCourseSelected(true);
+    }
     if (params.score) setTotalScore(String(params.score));
     if (params.par) setPar(String(params.par));
     if (params.holes) setHoles(String(params.holes));
@@ -96,6 +101,7 @@ export default function LogRound() {
 
   const resetForm = () => {
     setCourseName('');
+    setCourseSelected(false);
     setTotalScore('');
     setPar('72');
     setHoles('18');
@@ -128,6 +134,10 @@ export default function LogRound() {
     setErr(null);
     if (!courseName.trim()) {
       setErr('Course name is required');
+      return;
+    }
+    if (!courseSelected) {
+      setErr('Please pick a course from the suggestions, or tap "Add as a new course" if it\'s missing.');
       return;
     }
     const score = Number(totalScore);
@@ -170,16 +180,12 @@ export default function LogRound() {
         </View>
       </SafeAreaView>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={0}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.form}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bottomOffset={20}
       >
-        <ScrollView
-          contentContainerStyle={styles.form}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
           {prefillSource ? (
             <View testID="prefill-banner" style={styles.prefillBanner}>
               <View style={styles.prefillIcon}>
@@ -200,12 +206,19 @@ export default function LogRound() {
             </View>
           ) : null}
 
-          <TBInput
-            label="Course name"
+          <CourseAutocomplete
             testID="log-course"
             value={courseName}
-            onChangeText={setCourseName}
-            placeholder="e.g. Pebble Meadows GC"
+            selected={courseSelected}
+            onChangeText={(t) => {
+              setCourseName(t);
+              setCourseSelected(false);
+            }}
+            onSelect={(c) => {
+              setCourseName(c.name);
+              setCourseSelected(!!c.name);
+              if (c.par && (!par || par === '72')) setPar(String(c.par));
+            }}
           />
 
           <View style={styles.row}>
@@ -340,8 +353,7 @@ export default function LogRound() {
               custom EAS build, TeeBox registers a Share Extension that forwards the data to this screen.
             </Text>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       {loading ? (
         <View style={styles.overlay}>

@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -106,8 +104,11 @@ export default function ProfileEdit() {
         <View style={{ width: 44 }} />
       </SafeAreaView>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.form}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={20}
+      >
           <View style={styles.avatarWrap}>
             <View style={styles.avatarLarge}>
               {avatar ? (
@@ -166,13 +167,12 @@ export default function ProfileEdit() {
             onPress={save}
             style={{ marginTop: spacing.md }}
           />
-        </ScrollView>
+      </KeyboardAwareScrollView>
         {saving ? (
           <View style={styles.overlay} pointerEvents="none">
             <ActivityIndicator color={colors.brandPrimary} size="large" />
           </View>
         ) : null}
-      </KeyboardAvoidingView>
     </View>
   );
 }

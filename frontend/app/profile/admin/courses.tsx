@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +46,7 @@ export default function AdminCoursesScreen() {
   const [stats, setStats] = useState<{ total_courses: number; by_source: Record<string, number> } | null>(null);
   const [activeJob, setActiveJob] = useState<ImportJob | null>(null);
   const [recentJobs, setRecentJobs] = useState<ImportJob[]>([]);
+  const [pending, setPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [triggering, setTriggering] = useState(false);
@@ -52,12 +54,17 @@ export default function AdminCoursesScreen() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [s, list] = await Promise.all([api.adminCourseStats(), api.adminListJobs()]);
+      const [s, list, pend] = await Promise.all([
+        api.adminCourseStats(),
+        api.adminListJobs(),
+        api.adminListPendingCourses(),
+      ]);
       setStats({ total_courses: s.total_courses, by_source: s.by_source });
       const jobs = list.jobs || [];
       const running = jobs.find((j) => j.status === 'queued' || j.status === 'running') || null;
       setActiveJob(running);
       setRecentJobs(jobs.filter((j) => j.id !== running?.id).slice(0, 8));
+      setPending(pend || []);
     } catch (e: any) {
       Alert.alert('Admin access required', e?.message || 'Only admins can view this page.');
       router.back();
@@ -284,6 +291,44 @@ export default function AdminCoursesScreen() {
           </Text>
         </View>
 
+        {/* Pending user-submitted courses */}
+        {pending.length > 0 ? (
+          <View style={styles.section} testID="admin-pending-section">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Text style={styles.sectionTitle}>Pending review</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{pending.length}</Text>
+              </View>
+            </View>
+            <Text style={styles.sectionSub}>
+              Community-submitted courses awaiting your approval. Rejecting notifies the submitter.
+            </Text>
+            {pending.map((c) => (
+              <PendingCourseRow
+                key={c.id}
+                course={c}
+                onApprove={async () => {
+                  try {
+                    await api.adminVerifyCourse(c.id);
+                    setPending((p) => p.filter((x) => x.id !== c.id));
+                    if (stats) setStats({ ...stats, total_courses: stats.total_courses });
+                  } catch (e: any) {
+                    Alert.alert('Could not approve', e?.message || 'Try again');
+                  }
+                }}
+                onReject={async (reason) => {
+                  try {
+                    await api.adminRejectCourse(c.id, reason);
+                    setPending((p) => p.filter((x) => x.id !== c.id));
+                  } catch (e: any) {
+                    Alert.alert('Could not reject', e?.message || 'Try again');
+                  }
+                }}
+              />
+            ))}
+          </View>
+        ) : null}
+
         {/* Country picker */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Import a single country</Text>
@@ -350,6 +395,71 @@ export default function AdminCoursesScreen() {
         ) : null}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function PendingCourseRow({
+  course,
+  onApprove,
+  onReject,
+}: {
+  course: any;
+  onApprove: () => Promise<void>;
+  onReject: (reason: string) => Promise<void>;
+}) {
+  const promptReject = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Reject this submission?',
+        'Optional reason (sent to the golfer as a notification).',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Reject',
+            style: 'destructive',
+            onPress: (reason) => onReject((reason || '').trim()),
+          },
+        ],
+        'plain-text',
+      );
+    } else {
+      // Android: Alert.prompt is iOS-only, just confirm and send empty reason.
+      Alert.alert(
+        'Reject this submission?',
+        'The golfer will be notified.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Reject', style: 'destructive', onPress: () => onReject('') },
+        ],
+      );
+    }
+  };
+
+  return (
+    <View style={styles.pendingCard} testID={`admin-pending-${course.id}`}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pendingName}>{course.name}</Text>
+        <Text style={styles.pendingMeta}>
+          Par {course.par} · Submitted by {course.submitted_by_name || 'unknown'}
+        </Text>
+        {course.city || course.region || course.country ? (
+          <Text style={styles.pendingMeta}>
+            {[course.city, course.region, course.country].filter(Boolean).join(', ')}
+          </Text>
+        ) : null}
+        {course.round_count > 0 ? (
+          <Text style={styles.pendingUsage}>{course.round_count} round(s) logged here</Text>
+        ) : null}
+      </View>
+      <View style={styles.pendingActions}>
+        <Pressable onPress={onApprove} style={styles.approveBtn} testID={`admin-pending-approve-${course.id}`}>
+          <Ionicons name="checkmark" size={16} color="#fff" />
+        </Pressable>
+        <Pressable onPress={promptReject} style={styles.rejectBtn} testID={`admin-pending-reject-${course.id}`}>
+          <Ionicons name="close" size={16} color="#fff" />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -468,4 +578,45 @@ const styles = StyleSheet.create({
   historySub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: colors.onSurface, textAlign: 'center', marginBottom: 6 },
   emptySub: { fontSize: 13, color: colors.muted, textAlign: 'center' },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: '#c0392b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  pendingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pendingName: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
+  pendingMeta: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  pendingUsage: { fontSize: 11, color: colors.brandPrimary, fontWeight: '700', marginTop: 4 },
+  pendingActions: { flexDirection: 'row', gap: 8 },
+  approveBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: '#c0392b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

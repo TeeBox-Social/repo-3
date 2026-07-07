@@ -47,6 +47,7 @@ courses_col = db.courses
 refresh_tokens_col = db.refresh_tokens
 wishlists_col = db.wishlists
 import_jobs_col = db.import_jobs
+notifications_col = db.notifications
 
 # Auth config
 SECRET_KEY = os.environ["JWT_SECRET_KEY"]
@@ -731,10 +732,16 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
     async for c in rounds_col.aggregate(pipeline):
         round_agg[c["_id"]] = c
 
-    # Master course list
-    course_query: dict = {}
+    # Master course list — hide unverified courses from other users, but keep
+    # unverified courses submitted by the current user so they can find them.
+    course_query: dict = {
+        "$or": [
+            {"verified": {"$ne": False}},        # verified=True OR verified missing (legacy)
+            {"submitted_by": user["id"]},
+        ]
+    }
     if safe:
-        course_query = {"name": {"$regex": safe, "$options": "i"}}
+        course_query = {"$and": [course_query, {"name": {"$regex": safe, "$options": "i"}}]}
     master = [c async for c in courses_col.find(course_query, {"_id": 0}).limit(100)]
 
     seen = set()
@@ -793,6 +800,171 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
     # Sort: played first (desc play_count), then master (alphabetical)
     out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
     return out[:60]
+
+# ---- Course search (lightweight autocomplete for Log Round) ----
+@api_router.get("/courses/search")
+async def course_search(q: str = "", limit: int = Query(15, ge=1, le=30), user=Depends(get_current_user)):
+    """Prefix-friendly course lookup for the Log Round autocomplete.
+    Returns verified courses + the current user's own submissions."""
+    safe = _safe_query(q, max_len=80)
+    if not safe:
+        return []
+    query = {
+        "name": {"$regex": safe, "$options": "i"},
+        "$or": [
+            {"verified": {"$ne": False}},
+            {"submitted_by": user["id"]},
+        ],
+    }
+    out = []
+    async for c in courses_col.find(query, {"_id": 0}).limit(limit):
+        out.append({
+            "id": c.get("id"),
+            "name": c["name"],
+            "city": c.get("city"),
+            "region": c.get("region"),
+            "country": c.get("country"),
+            "par": c.get("par"),
+            "verified": c.get("verified", True),  # missing = legacy = considered verified
+            "submitted_by_me": c.get("submitted_by") == user["id"],
+        })
+    return out
+
+# ---- User-submitted courses (community add) ----
+class NewCourseIn(BaseModel):
+    name: str = Field(min_length=3, max_length=120)
+    par: int = Field(ge=27, le=90)  # 9-hole par ~27 up to par-90 mega courses
+    city: Optional[str] = Field(default=None, max_length=80)
+    region: Optional[str] = Field(default=None, max_length=80)
+    country: Optional[str] = Field(default=None, max_length=60)
+
+@api_router.post("/courses")
+@limiter.limit("10/hour")
+async def submit_course(request: Request, data: NewCourseIn, user=Depends(get_current_user)):
+    """Community submission of a missing course. Persists with verified=False
+    and is only visible to the submitter until an admin approves it."""
+    name = data.name.strip()
+    # Case-insensitive dup check — mongo unique index is exact-match, so we also
+    # guard here to avoid "Pebble Beach" vs "pebble beach" duplicates.
+    existing = await courses_col.find_one(
+        {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}},
+        {"_id": 0, "id": 1, "name": 1, "verified": 1, "submitted_by": 1},
+    )
+    if existing:
+        # If it exists and is theirs / already verified, just return it — no error.
+        return {"course": existing, "created": False}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "par": data.par,
+        "city": (data.city or "").strip() or None,
+        "region": (data.region or "").strip() or None,
+        "country": (data.country or "").strip() or None,
+        "lat": None,
+        "lng": None,
+        "source": "community",
+        "verified": False,
+        "submitted_by": user["id"],
+        "submitted_by_name": user.get("display_name"),
+        "created_at": now_iso(),
+    }
+    try:
+        await courses_col.insert_one(doc)
+    except Exception:
+        raise HTTPException(status_code=409, detail="A course with this name already exists")
+    doc.pop("_id", None)
+    return {"course": doc, "created": True}
+
+
+# ---- Admin: pending courses queue & verification ----
+@api_router.get("/admin/courses/pending")
+async def admin_list_pending(user=Depends(get_current_user)):
+    _require_admin(user)
+    out = []
+    async for c in courses_col.find({"verified": False}, {"_id": 0}).sort("created_at", -1).limit(100):
+        # Attach round-count so admin can see if this course is being actively used
+        used = await rounds_col.count_documents({"course_name": c["name"]})
+        out.append({**c, "round_count": used})
+    return out
+
+
+class RejectIn(BaseModel):
+    reason: Optional[str] = Field(default="", max_length=280)
+
+
+@api_router.post("/admin/courses/{course_id}/verify")
+async def admin_verify_course(course_id: str, user=Depends(get_current_user)):
+    _require_admin(user)
+    course = await courses_col.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if course.get("verified"):
+        return {"ok": True, "already_verified": True}
+    await courses_col.update_one(
+        {"id": course_id},
+        {"$set": {"verified": True, "verified_at": now_iso(), "verified_by": user["id"]}},
+    )
+    # Silent approval — no notification (per product spec).
+    return {"ok": True}
+
+
+@api_router.post("/admin/courses/{course_id}/reject")
+async def admin_reject_course(course_id: str, data: RejectIn, user=Depends(get_current_user)):
+    _require_admin(user)
+    course = await courses_col.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if course.get("verified"):
+        raise HTTPException(status_code=400, detail="Cannot reject a course that is already verified")
+    submitter = course.get("submitted_by")
+    reason = (data.reason or "").strip()
+    # Notify the submitter first (before deletion), so we retain the course_name
+    if submitter:
+        await notifications_col.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": submitter,
+            "type": "course_rejected",
+            "title": "Course submission rejected",
+            "body": (
+                f'Your submission "{course["name"]}" was not approved.'
+                + (f" Reason: {reason}" if reason else "")
+            ),
+            "course_name": course["name"],
+            "reason": reason or None,
+            "read": False,
+            "created_at": now_iso(),
+        })
+    await courses_col.delete_one({"id": course_id})
+    return {"ok": True}
+
+
+# ---- Notifications ----
+@api_router.get("/notifications")
+async def list_notifications(user=Depends(get_current_user)):
+    out = []
+    async for n in notifications_col.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(50):
+        out.append(n)
+    unread = await notifications_col.count_documents({"user_id": user["id"], "read": False})
+    return {"notifications": out, "unread": unread}
+
+
+@api_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user=Depends(get_current_user)):
+    await notifications_col.update_one(
+        {"id": notification_id, "user_id": user["id"]},
+        {"$set": {"read": True, "read_at": now_iso()}},
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/read-all")
+async def mark_all_notifications_read(user=Depends(get_current_user)):
+    await notifications_col.update_many(
+        {"user_id": user["id"], "read": False},
+        {"$set": {"read": True, "read_at": now_iso()}},
+    )
+    return {"ok": True}
+
 
 # ---- Course Reviews ----
 @api_router.get("/courses/{course_name}/reviews")
@@ -1359,6 +1531,8 @@ async def on_startup():
         await courses_col.create_index("name", unique=True)
         await import_jobs_col.create_index("status")
         await import_jobs_col.create_index([("created_at", -1)])
+        await notifications_col.create_index([("user_id", 1), ("created_at", -1)])
+        await notifications_col.create_index([("user_id", 1), ("read", 1)])
     except Exception as e:
         logger.warning(f"index setup skipped: {e}")
 
