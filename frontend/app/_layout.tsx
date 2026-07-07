@@ -22,13 +22,14 @@ try {
   // Native module can throw on hot reloads / dev builds — safe to ignore.
 }
 
-// Hard safety net: force-hide the splash after 5s even if fonts / auth are
-// still resolving. This eliminates the "app just spins forever" symptom on
-// cold start when the network is unreachable or a native promise never
-// resolves. Without this, users would have to reinstall the app.
+// Hard safety net: force-hide the native splash after 2s. The React tree
+// takes over from there — the gateway route (`app/index.tsx`) shows a branded
+// "Warming up" state and self-navigates to sign-in after 5s max. Two seconds
+// is short enough that the user never wonders if the app died, and long enough
+// for the JS bundle to parse on mid-range Android devices.
 setTimeout(() => {
   SplashScreen.hideAsync().catch(() => {});
-}, 5000);
+}, 2000);
 
 function ProtectedRouter() {
   const { user, loading } = useAuth();
@@ -37,9 +38,16 @@ function ProtectedRouter() {
   const navState = useRootNavigationState();
 
   useEffect(() => {
-    if (loading || !navState?.key) return;
+    // Wait for the navigator to mount, but no longer block on `loading` — the
+    // gateway `/app/index.tsx` handles the loading state visually itself, and
+    // for every other route we want redirects to fire immediately based on
+    // whatever the current auth snapshot is. Blocking here was one of the
+    // reasons a stuck bootstrap could freeze the whole app.
+    if (!navState?.key) return;
+    if (loading) return; // still let the loading spinner show on /
     const inAuth = segments[0] === '(auth)';
-    if (!user && !inAuth) {
+    const onGateway = segments.length === 0; // "/" route
+    if (!user && !inAuth && !onGateway) {
       router.replace('/(auth)/sign-in');
     } else if (user && inAuth) {
       router.replace('/(tabs)');

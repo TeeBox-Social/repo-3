@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   api,
-  clearTokens,
   getAccessToken,
   saveTokens,
   setOnAuthLost,
@@ -33,18 +32,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const bootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const token = await getAccessToken();
+      // Guard SecureStore read against Android production-build hangs. In some
+      // signed-release scenarios `SecureStore.getItemAsync` can block forever
+      // if the keystore alias is in a weird state after uninstall/reinstall.
+      // A 3s ceiling means we never lock the entire app on it.
+      const token = await Promise.race([
+        getAccessToken(),
+        new Promise<string | null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
       if (!token) {
         setUser(null);
       } else {
-        // Race /auth/me against a hard 12s ceiling. This prevents the cold-start
+        // Race /auth/me against a hard 6s ceiling. This prevents the cold-start
         // hang symptom (splash spinner forever) when the backend is unreachable —
-        // if the check times out we keep the token and continue as best-effort,
-        // showing a stale/optimistic session so the user isn't locked out.
+        // if the check times out we drop the user to sign-in so they can retry.
         const meResult = await Promise.race([
           api.me().then((u) => ({ ok: true as const, user: u })),
           new Promise<{ ok: false; timeout?: boolean }>((resolve) =>
-            setTimeout(() => resolve({ ok: false, timeout: true }), 12000),
+            setTimeout(() => resolve({ ok: false, timeout: true }), 6000),
           ),
         ]);
         if (meResult.ok) {
