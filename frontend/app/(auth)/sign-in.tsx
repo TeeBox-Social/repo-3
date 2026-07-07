@@ -5,8 +5,10 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -15,16 +17,58 @@ import { colors, IMAGES, radius, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { useAuth } from '@/src/auth-context';
-import { storage } from '@/src/utils/storage';
 
 const { height } = Dimensions.get('window');
 const HERO_H = Math.round(height * 0.42);
 
-// Storage keys: email is fine in AsyncStorage; password is stored in SecureStore
-// via `storage.secureSet` / `storage.secureGet` so it's Keychain/Keystore-encrypted.
+// Storage keys for the Remember-me feature. Loaded lazily via a require() so
+// that if the storage module fails to load for any reason (bad native module
+// linking on Android, etc.) the sign-in screen still renders — the user just
+// won't get credential persistence until the next build.
 const REMEMBER_FLAG_KEY = 'teebox_remember_me';
 const REMEMBER_EMAIL_KEY = 'teebox_remember_email';
 const REMEMBER_PASSWORD_KEY = 'teebox_remember_password';
+
+// Best-effort storage adapter. Safe even if the native module isn't available.
+async function safeGetRemembered(): Promise<{ email: string; password: string } | null> {
+  try {
+    // Lazy dynamic import — if this throws, we just return null and the form renders empty.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@/src/utils/storage');
+    const s = mod?.storage;
+    if (!s) return null;
+    const flag = await s.getItem(REMEMBER_FLAG_KEY, null);
+    if (flag !== '1') return null;
+    const email = await s.getItem(REMEMBER_EMAIL_KEY, null);
+    const password = await s.secureGet(REMEMBER_PASSWORD_KEY, null);
+    return {
+      email: email ? String(email) : '',
+      password: password ? String(password) : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function safeSaveRemembered(email: string, password: string, remember: boolean) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@/src/utils/storage');
+    const s = mod?.storage;
+    if (!s) return;
+    if (remember) {
+      await s.setItem(REMEMBER_FLAG_KEY, '1');
+      await s.setItem(REMEMBER_EMAIL_KEY, email);
+      await s.secureSet(REMEMBER_PASSWORD_KEY, password);
+    } else {
+      await s.removeItem(REMEMBER_FLAG_KEY);
+      await s.removeItem(REMEMBER_EMAIL_KEY);
+      await s.secureRemove(REMEMBER_PASSWORD_KEY);
+    }
+  } catch {
+    // Best-effort: never let a storage hiccup block the sign-in flow
+  }
+}
 
 export default function SignIn() {
   const router = useRouter();
@@ -36,44 +80,42 @@ export default function SignIn() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Hydrate any remembered credentials from prior sessions
+  // Hydrate any remembered credentials from prior sessions. Fully defensive —
+  // any exception here is swallowed so the form never fails to render.
   useEffect(() => {
-    (async () => {
-      try {
-        const flag = await storage.getItem(REMEMBER_FLAG_KEY, null);
-        if (flag !== '1') return;
-        const savedEmail = await storage.getItem(REMEMBER_EMAIL_KEY, null);
-        const savedPw = await storage.secureGet(REMEMBER_PASSWORD_KEY, null);
-        if (savedEmail) setEmail(String(savedEmail));
-        if (savedPw) setPassword(String(savedPw));
-        setRememberMe(true);
-      } catch {}
-    })();
+    let alive = true;
+    safeGetRemembered().then((remembered) => {
+      if (!alive || !remembered) return;
+      if (remembered.email) setEmail(remembered.email);
+      if (remembered.password) setPassword(remembered.password);
+      setRememberMe(true);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
-
-  const persistRemember = async () => {
-    try {
-      if (rememberMe) {
-        await storage.setItem(REMEMBER_FLAG_KEY, '1');
-        await storage.setItem(REMEMBER_EMAIL_KEY, email.trim());
-        await storage.secureSet(REMEMBER_PASSWORD_KEY, password);
-      } else {
-        await storage.removeItem(REMEMBER_FLAG_KEY);
-        await storage.removeItem(REMEMBER_EMAIL_KEY);
-        await storage.secureRemove(REMEMBER_PASSWORD_KEY);
-      }
-    } catch {}
-  };
 
   const onSubmit = async () => {
     setErr(null);
+    if (!email.trim() || !password) {
+      setErr('Please enter your email and password.');
+      return;
+    }
     setLoading(true);
     try {
       await signIn(email.trim(), password);
       // Only persist AFTER the login succeeds — never store a bad password.
-      await persistRemember();
+      await safeSaveRemembered(email.trim(), password, rememberMe);
     } catch (e: any) {
-      setErr(e?.message || 'Login failed');
+      // Surface the actual error so the user knows what went wrong instead of
+      // silently failing. Includes network errors ("Failed to fetch" style),
+      // auth errors ("Invalid email or password"), and rate limits.
+      const msg = e?.message || String(e) || 'Login failed';
+      setErr(
+        /Failed to fetch|Network request failed|aborted|AbortError/i.test(msg)
+          ? 'Cannot reach the TeeBox server. Check your internet connection and try again.'
+          : msg,
+      );
     } finally {
       setLoading(false);
     }
@@ -97,11 +139,18 @@ export default function SignIn() {
         </View>
       </View>
 
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.form}
-        keyboardShouldPersistTaps="handled"
-        bottomOffset={20}
+      {/* Using core RN KeyboardAvoidingView + ScrollView (no third-party native
+          module required) so the sign-in screen has zero risk of a native
+          linking issue rendering it blank on Android release builds. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          contentContainerStyle={styles.form}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.formTitle}>Welcome back</Text>
           <TBInput
             label="Email"
@@ -147,7 +196,11 @@ export default function SignIn() {
             </View>
             <Text style={styles.rememberText}>Remember me on this device</Text>
           </Pressable>
-          {err ? <Text style={styles.errText}>{err}</Text> : null}
+          {err ? (
+            <Text style={styles.errText} testID="sign-in-error">
+              {err}
+            </Text>
+          ) : null}
           <TBButton
             label="Sign in"
             testID="sign-in-submit"
@@ -164,7 +217,8 @@ export default function SignIn() {
               New to TeeBox? <Text style={styles.linkStrong}>Create an account</Text>
             </Text>
           </Pressable>
-      </KeyboardAwareScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

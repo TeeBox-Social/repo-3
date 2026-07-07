@@ -4,8 +4,10 @@ import {
   Text,
   StyleSheet,
   Pressable,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
@@ -64,11 +66,15 @@ export default function SignUp() {
         <Text style={styles.title}>Join TeeBox</Text>
       </View>
 
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.form}
-        keyboardShouldPersistTaps="handled"
-        bottomOffset={20}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          contentContainerStyle={styles.form}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.subtitle}>Build your golf identity in 30 seconds.</Text>
           <TBInput
             label="Display name"
@@ -126,7 +132,8 @@ export default function SignUp() {
               Already have an account? <Text style={styles.linkStrong}>Sign in</Text>
             </Text>
           </Pressable>
-      </KeyboardAwareScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
