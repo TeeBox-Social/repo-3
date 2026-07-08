@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 21 test pass. Backend: 18/18 pytest cases green after refactor (all router groups smoke-tested — auth/rounds/users/courses/notifications/admin). Notification prefs default-true on register/login/me, PATCH partial merge works (unrelated keys preserved). Per-event opt-out verified for post_like, follow, comment_like, achievement_unlocked. AVG-score 9-hole extrapolation returns 78.0 for a 39@par36 round on a par-72 course and averages to 79.0 with a subsequent 80@par72 18-hole round. Frontend (mobile viewport 375x667): /achievements route renders header, progress card (6/14 for jordan, 43% bar), unlocked-6 rows before locked-8, all Ionicon per key. Profile achievements section shows ONLY earned (6 rows, no locked cards, no Show/Hide toggle) — earned list via horizontal scroll. profile-achievements-link and profile-notif-settings both navigate correctly when clicked without force (see caveat). /profile/notifications renders all 7 pref rows (comment_like, achievement_unlocked, post_like, post_comment, mention, follow, course_verified) with Switch controls; toggling comment_like PATCHes /api/auth/me. Notifications screen iconForType returns correct icons per type. **Critical bug found & fixed**: helpers.py emit_notification used `if not target:` after a projected find_one — which returned `{}` for users lacking a stored notification_prefs field (i.e., all pre-iter21 users and freshly-registered users), causing notifications to be silently dropped for post_like/comment_like/follow/achievement_unlocked/mention/course_verified. Changed to `if target is None:`; re-verified: fresh users now receive post_like + achievement_unlocked notifications. Deprecated-package scan: no expo-av / expo-barcode-scanner / expo-background-fetch usage. Console deprecation warnings observed (non-blocking, pre-existing): `props.pointerEvents` (MentionInput), `shadow*` style props, `Image.style.resizeMode`.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/(tabs)/profile", "issues": ["The 'Achievements' section title Pressable sits at y≈620 on a 667-tall viewport, ~14px above the bottom tab bar — force-clicks land on the Log tab. Not a functional bug (regular click works), but consider adding more paddingBottom to the ScrollView contentContainer to raise the section into safer touch territory."]}
+    ],
+    "react_native_issues": [
+      {"component": "MentionInput", "issue": "Console warning `props.pointerEvents is deprecated. Use style.pointerEvents`. Reference: /app/frontend/src/components/MentionInput.tsx (~L103). Pre-existing from iter20; still not migrated."},
+      {"component": "Global theme shadow tokens", "issue": "Multiple screens log `\"shadow*\" style props are deprecated. Use \"boxShadow\"` on RN-web. Reference: /app/frontend/src/theme.ts (shadow.card / shadow.soft)."},
+      {"component": "Image resizeMode", "issue": "Warning `Image: style.resizeMode is deprecated. Please use props.resizeMode.` — check any Image with resizeMode inside StyleSheet."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_refactor_and_prefs.py",
+    "/app/test_reports/pytest/iter21_results.xml"
+  ],
+  "action_items": [
+    "(Applied fix — please review) helpers.py::emit_notification changed `if not target:` → `if target is None:`. Root cause: users_col.find_one with projection {\"_id\":0,\"notification_prefs\":1} returns `{}` (not None) when the doc has no notification_prefs field, and `not {} == True` short-circuited the function. Consider also documenting this in a comment and/or backfilling `notification_prefs = DEFAULT_NOTIFICATION_PREFS` on the register insert so the field is always present.",
+    "(Optional UX) Raise the Achievements section on the profile screen (extra paddingBottom or a bigger footer spacer) so its header pill isn't visually adjacent to the bottom tab bar on 667px viewports.",
+    "(Deprecations, non-blocking) Migrate `pointerEvents` prop → `style.pointerEvents` in MentionInput; migrate `shadow*` tokens → `boxShadow` in theme; migrate Image style.resizeMode → props.resizeMode."
+  ],
+  "critical_code_review_comments": [
+    "server.py refactor is clean (~100 lines, only wires include_router + startup hooks). Router modules import cleanly; no circular imports observed.",
+    "helpers.emit_notification: the just-fixed truthiness bug is subtle and would recur if refactored — recommend switching to `.find_one({...}, {\"_id\": 0}) or {}` pattern OR explicit `is None` checks anywhere else Mongo projections are used with narrow fields.",
+    "users_col.get_user avg-score computation caches course par lookups per-request — good. It uses the last 20 rounds (created_at desc). For users with a mix of 9/18 rounds beyond 20, this is fine but worth flagging in docs.",
+    "PATCH /auth/me only accepts keys inside NOTIFICATION_PREF_KEYS — unknown keys are silently ignored. Consider validating with a Pydantic sub-model for stricter API surface.",
+    "notification prefs are not defaulted at user-insert time (register endpoint), only synthesized in the response via notification_prefs_of. This is what surfaced the emit_notification bug. Suggest storing the full DEFAULT_NOTIFICATION_PREFS dict on register to make DB truth match API truth."
+  ],
+  "updated_files": [
+    "/app/backend/helpers.py",
+    "/app/backend/tests/test_iter21_refactor_and_prefs.py"
+  ],
+  "success_rate": {"backend": "100% (18/18 after fix)", "frontend": "100% (all 4 targeted flows: /achievements render, profile section earned-only, /profile/notifications toggles, notifications icons)"},
+  "seed_data_creation": "Ephemeral throwaway users only (test_iter21_<uuid>@teebox.demo) plus a few TEST_iter21_* course rounds. No production data mutated. Existing jordan/sam/reese demo accounts used read-only for smoke tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend register endpoint is 5/min per IP — pytest suite factors in 65s backoff so full run takes ~80s. If suite must be split, run TestNotificationPrefs and TestNotificationOptOut in different minutes. helpers.emit_notification was patched — verify no regressions in mention/post_comment/course_verified flows (not covered explicitly but should benefit from the same fix). Fresh users now get achievement_unlocked notifications on their FIRST round; TestAvgNormalization confirms 9→18 extrapolation formula raw*(target_par/round_par).",
+  "rca_of_issue": "**Bug**: post_like / comment_like / follow / achievement_unlocked notifications were never being created for users who did not yet have a `notification_prefs` field stored on their user doc (which included every user registered before iter21 AND every freshly-registered user in iter21). **Reproduction**: register user B, have user A like a round posted by B, GET /api/notifications as B — returned `notifications: []` even though `post_like` pref defaults to True. **Root cause**: In /app/backend/helpers.py emit_notification did `target = users_col.find_one({...}, {\"_id\":0,\"notification_prefs\":1})` then `if not target: return`. When the doc exists but the projected field doesn't, Mongo returns `{}`; `not {}` is True in Python, so the function bailed before inserting any notification. **Fix**: Replaced `if not target:` with `if target is None:` — an existing but pref-less user now proceeds to notification_prefs_of(target) which correctly defaults each key to True. **Mitigation**: Backfill DEFAULT_NOTIFICATION_PREFS on register insert (models.py already has the field on ProfileUpdate; extending the register doc write would eliminate the truthy-vs-none class of bug for future prefs). Verified fix via direct curl and full pytest re-run: 18/18 pass."
+}

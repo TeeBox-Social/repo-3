@@ -25,12 +25,34 @@ type Notification = {
   reason?: string;
 };
 
+function iconForType(type: string): { icon: any; color: string } {
+  switch (type) {
+    case 'achievement_unlocked':
+      return { icon: 'trophy', color: colors.brandPrimary };
+    case 'comment_like':
+      return { icon: 'heart', color: colors.brandSecondary };
+    case 'post_like':
+      return { icon: 'heart', color: colors.brandSecondary };
+    case 'post_comment':
+      return { icon: 'chatbubble', color: colors.brandPrimary };
+    case 'mention':
+      return { icon: 'at', color: colors.brandPrimary };
+    case 'follow':
+      return { icon: 'person-add', color: colors.brandPrimary };
+    case 'course_rejected':
+      return { icon: 'alert-circle', color: '#c0392b' };
+    case 'course_verified':
+      return { icon: 'checkmark-done', color: colors.brandPrimary };
+    default:
+      return { icon: 'notifications', color: colors.brandPrimary };
+  }
+}
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
   const load = useCallback(async () => {
     try {
       const res = await api.listNotifications();
@@ -87,23 +109,22 @@ export default function NotificationsScreen() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brandPrimary} />}
         >
-          {items.map((n) => (
-            <View key={n.id} style={[styles.card, !n.read && styles.cardUnread]} testID={`notif-${n.id}`}>
-              <View style={styles.iconWrap}>
-                <Ionicons
-                  name={n.type === 'course_rejected' ? 'alert-circle' : 'notifications'}
-                  size={22}
-                  color={n.type === 'course_rejected' ? '#c0392b' : colors.brandPrimary}
-                />
+          {items.map((n) => {
+            const meta = iconForType(n.type);
+            return (
+              <View key={n.id} style={[styles.card, !n.read && styles.cardUnread]} testID={`notif-${n.id}`}>
+                <View style={styles.iconWrap}>
+                  <Ionicons name={meta.icon} size={22} color={meta.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{n.title}</Text>
+                  <Text style={styles.cardBody}>{n.body}</Text>
+                  <Text style={styles.cardTime}>{new Date(n.created_at).toLocaleDateString()}</Text>
+                </View>
+                {!n.read ? <View style={styles.unreadDot} /> : null}
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{n.title}</Text>
-                <Text style={styles.cardBody}>{n.body}</Text>
-                <Text style={styles.cardTime}>{new Date(n.created_at).toLocaleDateString()}</Text>
-              </View>
-              {!n.read ? <View style={styles.unreadDot} /> : null}
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
     </SafeAreaView>

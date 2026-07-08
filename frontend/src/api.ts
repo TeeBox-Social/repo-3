@@ -13,6 +13,27 @@ export type User = {
   bio?: string;
   avatar?: string | null;
   is_admin?: boolean;
+  notification_prefs?: NotificationPrefs;
+};
+
+export type NotificationPrefs = {
+  comment_like: boolean;
+  achievement_unlocked: boolean;
+  post_like: boolean;
+  post_comment: boolean;
+  mention: boolean;
+  follow: boolean;
+  course_verified: boolean;
+};
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  comment_like: true,
+  achievement_unlocked: true,
+  post_like: true,
+  post_comment: true,
+  mention: true,
+  follow: true,
+  course_verified: true,
 };
 
 export type ImportJob = {
