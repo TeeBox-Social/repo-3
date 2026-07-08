@@ -77,6 +77,31 @@ async def create_refresh_token(user_id: str, family_id: Optional[str] = None) ->
     return token
 
 
+def create_typed_token(sub: str, token_type: str, expires_minutes: int) -> str:
+    """Build a short-lived signed token for out-of-band flows (email verify,
+    password reset). ``sub`` is the user id; ``token_type`` is asserted on
+    consumption so an access token can't be used as a reset token and vice versa.
+    """
+    payload = {
+        "sub": sub,
+        "type": token_type,
+        "jti": str(uuid.uuid4()),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_typed_token(token: str, expected_type: str) -> dict:
+    """Decode a token and enforce the ``type`` claim. Raises HTTPException(400/401)."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    if payload.get("type") != expected_type:
+        raise HTTPException(status_code=400, detail="Invalid token type")
+    return payload
+
+
 async def get_current_user(cred: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if cred is None:
         raise HTTPException(status_code=401, detail="Not authenticated")

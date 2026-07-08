@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 22 (Resend email verify, password reset, account lockout) — comprehensive backend + frontend testing. 16/16 pytest cases pass. Frontend flows verified via Playwright: sign-in→forgot-password→success state, reset-password screen with URL-prefilled token + inline validation, verify-email screen success state, and the yellow verify-email banner on Feed with a working Resend button that switches to a 'we just resent' state. All iter22 features function end-to-end and legacy iter21 endpoints (auth/me, feed, notification prefs) still return 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_email_auth_lockout.py",
+    "/app/test_reports/pytest/iter22_results.xml"
+  ],
+  "action_items": [
+    "None from testing — iteration 22 is ready to ship. Optional follow-up: after Resend domain is verified, run a manual smoke test that a real inbox actually receives the verify + reset emails (backend enqueue + Resend call are exercised, but delivery is currently sandbox-restricted to teeboxsocialapp@gmail.com)."
+  ],
+  "critical_code_review_comments": [
+    "Nice: `_client_ip` prefers Cloudflare/XFF so proxy-fronted deploys rate-limit against the real user IP — kept our lockout test honest by letting us rotate the header per attempt.",
+    "Nice: reset-password revokes ALL outstanding refresh tokens for the user (verified in test_reset_flow_updates_password_and_unlocks) and clears failure counters — perfect belt-and-braces.",
+    "Nice: /auth/resend-verification and /auth/request-password-reset return 200 for every email (verified) so email enumeration isn't possible.",
+    "Observation (not a bug): register endpoint is limited to 5/min per IP; our tests bypass this by seeding users directly in Mongo. Something to remember if future tests exercise register at scale.",
+    "Observation: /auth/login limit is 10/min per IP. Our lockout test rotates X-Forwarded-For per request; production traffic behind CDN with proper XFF forwarding will work identically."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_email_auth_lockout.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16)",
+    "frontend": "100% (5/5 flows: forgot link+screen, reset-password screen w/ URL token, reset validations, verify-email screen, feed verify banner + resend)"
+  },
+  "seed_data_creation": "Tests seed disposable users directly in Mongo (prefixed `test-iter22-*@teebox.demo`) and clean them up in fixture teardown. Frontend banner test used a `iter22-banner-*` user which was cleaned up post-run. Seeded demo users (reese/jordan/sam) untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter22_email_auth_lockout.py uses sync pymongo (not motor) for DB seeding to avoid the event-loop-closed problem across pytest-asyncio tests. XFF header rotation is applied at the api_client fixture level (one fake IP per test session) plus per-request in the lockout test to avoid login/register rate limits. Reuse this pattern for future auth tests.",
+  "rca_of_issue": "No production bug encountered. Two test-only issues fixed while writing the harness: (1) pydantic EmailStr rejects `.local`/`.test` TLDs — switched TEST emails to `@teebox.demo` (same domain as the seeded accounts). (2) Motor's event loop is not shared across pytest-asyncio tests, causing 'Event loop is closed' on DB writes in later tests — switched DB seeding to sync pymongo which sidesteps the loop lifecycle entirely."
+}

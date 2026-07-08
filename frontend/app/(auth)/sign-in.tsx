@@ -209,6 +209,14 @@ export default function SignIn() {
             style={{ marginTop: spacing.md }}
           />
           <Pressable
+            testID="sign-in-forgot-password"
+            onPress={() => router.push('/(auth)/forgot-password' as any)}
+            style={{ marginTop: spacing.md, alignSelf: 'center' }}
+            hitSlop={8}
+          >
+            <Text style={styles.forgotText}>Forgot your password?</Text>
+          </Pressable>
+          <Pressable
             testID="sign-in-go-signup"
             onPress={() => router.push('/(auth)/sign-up')}
             style={{ marginTop: spacing.lg, alignSelf: 'center' }}
@@ -242,6 +250,7 @@ const styles = StyleSheet.create({
   errText: { color: colors.error, fontWeight: '700', fontSize: 13, marginTop: -4 },
   linkText: { fontSize: 14, color: colors.muted },
   linkStrong: { color: colors.brandPrimary, fontWeight: '800' },
+  forgotText: { fontSize: 14, color: colors.brandPrimary, fontWeight: '700' },
   eyeBtn: {
     width: 32,
     height: 32,

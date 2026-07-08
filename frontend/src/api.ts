@@ -13,6 +13,7 @@ export type User = {
   bio?: string;
   avatar?: string | null;
   is_admin?: boolean;
+  email_verified?: boolean;
   notification_prefs?: NotificationPrefs;
 };
 
@@ -198,6 +199,26 @@ export const api = {
       `/rounds/${roundId}/comments/${commentId}/like`,
       { method: 'POST' },
     ),
+  requestPasswordReset: (email: string) =>
+    request<{ ok: boolean; message: string }>('/auth/request-password-reset', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, new_password: string) =>
+    request<{ ok: boolean; message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password }),
+    }),
+  verifyEmail: (token: string) =>
+    request<{ ok: boolean; message: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: (email: string) =>
+    request<{ ok: boolean; message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
 
   getUser: (id: string) => request<any>(`/users/${id}`),
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),

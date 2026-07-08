@@ -151,6 +151,7 @@ export default function Feed() {
           />
         }
         renderItem={({ item }) => <RoundCard round={item} onLike={() => onLike(item.id)} />}
+        ListHeaderComponent={<VerifyBanner />}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Image source={{ uri: IMAGES.emptyFeed }} style={styles.emptyImg} contentFit="cover" />
@@ -182,6 +183,55 @@ export default function Feed() {
 }
 
 const HEADER_H = Platform.OS === 'ios' ? 120 : 110;
+
+function VerifyBanner() {
+  const { user } = useAuth();
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // `email_verified` is true for legacy accounts by default; only show banner
+  // when the flag is explicitly false.
+  if (!user || user.email_verified !== false || !user.email) return null;
+  const resend = async () => {
+    setErr(null);
+    setSending(true);
+    try {
+      await api.resendVerification(user.email!);
+      setSent(true);
+    } catch (e: any) {
+      setErr(e?.message || 'Could not resend verification email.');
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <View style={styles.verifyBanner} testID="verify-banner">
+      <View style={styles.verifyIcon}>
+        <Ionicons name="mail-unread" size={18} color="#8B5A00" />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.verifyTitle}>Verify your email</Text>
+        <Text style={styles.verifySub}>
+          {sent
+            ? "We just resent the link. Check your inbox (and spam)."
+            : `We sent a link to ${user.email}. Tap it to confirm your account.`}
+        </Text>
+        {err ? <Text style={styles.verifyErr}>{err}</Text> : null}
+      </View>
+      {!sent ? (
+        <Pressable
+          testID="verify-banner-resend"
+          onPress={resend}
+          hitSlop={8}
+          style={styles.verifyBtn}
+          disabled={sending}
+        >
+          <Text style={styles.verifyBtnText}>{sending ? '…' : 'Resend'}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
@@ -254,4 +304,34 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 14, color: colors.muted, textAlign: 'center', maxWidth: 300, marginBottom: spacing.md },
   errBanner: { padding: spacing.lg, gap: spacing.md },
   errText: { color: colors.error, textAlign: 'center', fontWeight: '600' },
+  verifyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: '#FFF4D6',
+    borderWidth: 1,
+    borderColor: '#F0DBA0',
+  },
+  verifyIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: '#FCE7B6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyTitle: { fontSize: 13, fontWeight: '800', color: '#7A4E00' },
+  verifySub: { fontSize: 12, color: '#7A4E00', marginTop: 2, lineHeight: 16 },
+  verifyErr: { fontSize: 11, color: '#8B1D1A', marginTop: 4, fontWeight: '700' },
+  verifyBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: '#8B5A00',
+  },
+  verifyBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 });

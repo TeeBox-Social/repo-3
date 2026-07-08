@@ -38,6 +38,23 @@ ADMIN_EMAILS: set[str] = {
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
 }
 
+# ---- Email (Resend) ----
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "TeeBox <onboarding@resend.dev>")
+# Public web URL used to build verification / reset links. Falls back to the deep
+# link scheme so at least mobile users can consume the emails during dev.
+PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
+APP_DEEP_LINK_SCHEME = os.environ.get("APP_DEEP_LINK_SCHEME", "teebox")
+
+# ---- Brute-force lockout ----
+LOCKOUT_MAX_ATTEMPTS = int(os.environ.get("LOCKOUT_MAX_ATTEMPTS", "10"))
+LOCKOUT_WINDOW_MINUTES = int(os.environ.get("LOCKOUT_WINDOW_MINUTES", "60"))
+LOCKOUT_DURATION_HOURS = int(os.environ.get("LOCKOUT_DURATION_HOURS", "1"))
+
+# ---- Token lifetimes for out-of-band flows ----
+EMAIL_VERIFY_TOKEN_HOURS = int(os.environ.get("EMAIL_VERIFY_TOKEN_HOURS", "48"))
+PASSWORD_RESET_TOKEN_MINUTES = int(os.environ.get("PASSWORD_RESET_TOKEN_MINUTES", "30"))
+
 # ---- Base64 payload caps (SEC-003) ----
 MAX_PHOTO_B64_LEN = 1_500_000   # ~1 MB decoded
 MAX_AVATAR_B64_LEN = 800_000     # ~600 KB decoded

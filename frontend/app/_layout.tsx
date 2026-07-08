@@ -47,23 +47,33 @@ function ProtectedRouter() {
     if (loading) return; // still let the loading spinner show on /
     const inAuth = segments[0] === '(auth)';
     const onGateway = segments.length === 0; // "/" route
-    if (!user && !inAuth && !onGateway) {
+    // Public flows reachable via email links even when signed-out.
+    const isPublicRoute =
+      segments[0] === 'reset-password' || segments[0] === 'verify-email';
+    if (!user && !inAuth && !onGateway && !isPublicRoute) {
       router.replace('/(auth)/sign-in');
     } else if (user && inAuth) {
       router.replace('/(tabs)');
     }
   }, [user, loading, segments, navState?.key, router]);
 
-  // Handle share-intent deep links: teebox://share?course=...&score=82&par=72&notes=...
+  // Handle share-intent + auth deep links:
+  //   teebox://share?course=...&score=82&par=72&notes=...
+  //   teebox://reset-password?token=...
+  //   teebox://verify-email?token=...
   useEffect(() => {
-    if (!user) return;
     const parse = (url: string | null) => {
       if (!url) return;
       try {
         const parsed = Linking.parse(url);
-        if (parsed.hostname === 'share' || parsed.path === 'share') {
-          const q = parsed.queryParams || {};
+        const target = parsed.hostname || parsed.path || '';
+        const q = parsed.queryParams || {};
+        if (target === 'share' && user) {
           router.push({ pathname: '/(tabs)/log', params: q as any });
+        } else if (target === 'reset-password') {
+          router.push({ pathname: '/reset-password' as any, params: q as any });
+        } else if (target === 'verify-email') {
+          router.push({ pathname: '/verify-email' as any, params: q as any });
         }
       } catch {}
     };
@@ -83,6 +93,8 @@ function ProtectedRouter() {
       <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
       <Stack.Screen name="profile/admin/courses" options={{ presentation: 'card' }} />
       <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
+      <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
+      <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
     </Stack>
   );
 }

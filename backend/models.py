@@ -82,3 +82,20 @@ class RejectIn(BaseModel):
 class PurgeIn(BaseModel):
     domains: Optional[List[str]] = None
     dry_run: bool = False
+
+
+class RequestResetIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6, max_length=200)
+
+
+class TokenIn(BaseModel):
+    token: str
+
+
+class ResendVerifyIn(BaseModel):
+    email: EmailStr
