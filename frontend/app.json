@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.teebox.app",
+      "bundleIdentifier": "com.teeboxsocial.app",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Attach photos to your round posts",
         "NSCameraUsageDescription": "Attach photos to your round posts",
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "com.teebox.app",
+      "package": "com.teeboxsocial.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#15803D"
