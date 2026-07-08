@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 
 from config import (
     ALGORITHM,
+    DEFAULT_NOTIFICATION_PREFS,
     MAX_AVATAR_B64_LEN,
     NOTIFICATION_PREF_KEYS,
     SECRET_KEY,
@@ -49,6 +50,9 @@ async def register(request: Request, data: RegisterIn):
         "handicap": data.handicap,
         "bio": "",
         "avatar": None,
+        # Persist defaults so DB truth matches API truth and future pref keys
+        # don't hit the truthy-vs-empty-dict trap.
+        "notification_prefs": dict(DEFAULT_NOTIFICATION_PREFS),
         "created_at": now_iso(),
     }
     await users_col.insert_one(doc)
