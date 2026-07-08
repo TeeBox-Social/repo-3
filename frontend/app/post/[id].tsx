@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { MentionInput } from '@/src/components/MentionInput';
+import { MentionText } from '@/src/components/MentionText';
 import { HoleGrid } from '@/src/components/HoleGrid';
 import { useAuth } from '@/src/auth-context';
 
@@ -241,7 +242,7 @@ export default function PostDetail() {
               </View>
             ) : null}
 
-            {round.notes ? <Text style={styles.notes}>{round.notes}</Text> : null}
+            {round.notes ? <MentionText text={round.notes} style={styles.notes} /> : null}
 
             <View style={styles.actions}>
               <Pressable testID="post-like" onPress={onLike} style={styles.actionBtn} hitSlop={6}>
@@ -313,7 +314,6 @@ function CommentRow({ c }: { c: any }) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const parts = String(c.text || '').split(/(@\S+)/g);
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentAvatar}>
@@ -325,17 +325,11 @@ function CommentRow({ c }: { c: any }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.commentAuthor}>{c.author?.display_name || 'Golfer'}</Text>
-        <Text style={styles.commentText}>
-          {parts.map((p, i) =>
-            p.startsWith('@') ? (
-              <Text key={i} style={styles.mention}>
-                {p}
-              </Text>
-            ) : (
-              <Text key={i}>{p}</Text>
-            ),
-          )}
-        </Text>
+        <MentionText
+          text={String(c.text || '')}
+          style={styles.commentText}
+          mentionStyle={styles.mention}
+        />
       </View>
     </View>
   );

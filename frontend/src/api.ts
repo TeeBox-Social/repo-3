@@ -190,6 +190,10 @@ export const api = {
   toggleFollow: (id: string) => request<{ following: boolean }>(`/users/${id}/follow`, { method: 'POST' }),
 
   discoverUsers: (q: string) => request<any[]>(`/discover/users?q=${encodeURIComponent(q)}`),
+  getUserByName: (name: string) =>
+    request<{ id: string; display_name: string; avatar?: string | null }>(
+      `/users/by-name/${encodeURIComponent(name)}`,
+    ),
   discoverCourses: (q: string) => request<any[]>(`/discover/courses?q=${encodeURIComponent(q)}`),
   discoverCoursesNearby: (lat: number, lng: number, radiusKm = 80) =>
     request<Array<{

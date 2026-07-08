@@ -619,6 +619,32 @@ async def unpin_round(user=Depends(get_current_user)):
     await users_col.update_one({"id": user["id"]}, {"$unset": {"pinned_round_id": ""}})
     return {"pinned": False}
 
+@api_router.get("/users/by-name/{display_name}")
+async def get_user_by_name(display_name: str, user=Depends(get_current_user)):
+    """Resolve a display-name (underscores allowed as space substitute) to a
+    user_id so @-mention chips can navigate to that golfer's profile.
+
+    Returns the closest exact match (case-insensitive) first, otherwise a
+    starts-with match — up to 1 result. Returns 404 if nothing found."""
+    safe = _safe_query(display_name.replace("_", " "), max_len=80)
+    if not safe:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Exact-ish match first
+    exact = await users_col.find_one(
+        {"display_name": {"$regex": f"^{re.escape(safe)}$", "$options": "i"}},
+        {"_id": 0, "hashed_password": 0},
+    )
+    if exact:
+        return {"id": exact["id"], "display_name": exact["display_name"], "avatar": exact.get("avatar")}
+    starts = await users_col.find_one(
+        {"display_name": {"$regex": f"^{re.escape(safe)}", "$options": "i"}},
+        {"_id": 0, "hashed_password": 0},
+    )
+    if starts:
+        return {"id": starts["id"], "display_name": starts["display_name"], "avatar": starts.get("avatar")}
+    raise HTTPException(status_code=404, detail="User not found")
+
+
 @api_router.get("/users/{user_id}/achievements")
 async def get_achievements(user_id: str, user=Depends(get_current_user)):
     rounds = [r async for r in rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1)]

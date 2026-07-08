@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { MentionText } from '@/src/components/MentionText';
 
 type Props = {
   round: any;
@@ -94,9 +95,7 @@ export function RoundCard({ round, onLike }: Props) {
       )}
 
       {round.notes ? (
-        <Text style={styles.notes} numberOfLines={3}>
-          {round.notes}
-        </Text>
+        <MentionText text={round.notes} style={styles.notes} numberOfLines={3} />
       ) : null}
 
       {/* Action bar */}
