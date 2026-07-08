@@ -100,7 +100,7 @@ export function MentionInput({
   return (
     <View style={{ width: '100%', position: 'relative' }}>
       {suggestions.length > 0 || (active && loading) ? (
-        <View style={styles.suggestBox} testID="mention-suggestions" pointerEvents="box-none">
+        <View testID="mention-suggestions" style={[styles.suggestBox, { pointerEvents: 'box-none' } as any]}>
           {loading ? (
             <View style={styles.suggestLoading}>
               <ActivityIndicator size="small" color={colors.brandPrimary} />
