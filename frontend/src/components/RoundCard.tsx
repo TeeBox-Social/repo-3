@@ -8,10 +8,38 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { MentionText } from '@/src/components/MentionText';
 
+type Achievement = {
+  key: string;
+  title: string;
+  desc?: string;
+  icon?: string;
+};
+
 type Props = {
   round: any;
   onLike: () => void;
 };
+
+function iconFor(key?: string): any {
+  switch (key) {
+    case 'flag':
+      return 'flag';
+    case 'trophy':
+      return 'trophy';
+    case 'star':
+      return 'star';
+    case 'golf':
+      return 'golf';
+    case 'medal':
+      return 'medal';
+    case 'map':
+      return 'map';
+    case 'flame':
+      return 'flame';
+    default:
+      return 'ribbon';
+  }
+}
 
 export function RoundCard({ round, onLike }: Props) {
   const router = useRouter();
@@ -26,20 +54,27 @@ export function RoundCard({ round, onLike }: Props) {
     .join('')
     .toUpperCase();
 
+  const openCourse = () => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push(`/course/${encodeURIComponent(round.course_name)}` as any);
+  };
+
+  const openPost = () => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push(`/post/${round.id}` as any);
+  };
+
+  const newAchievements: Achievement[] = Array.isArray(round.new_achievements)
+    ? round.new_achievements
+    : [];
+
   return (
-    <Pressable
-      testID={`round-card-${round.id}`}
-      style={styles.card}
-      onPress={() => {
-        Haptics.selectionAsync().catch(() => {});
-        router.push(`/post/${round.id}`);
-      }}
-    >
+    <Pressable testID={`round-card-${round.id}`} style={styles.card} onPress={openPost}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable
           testID={`round-card-author-${round.id}`}
-          onPress={() => author.id && router.push(`/user/${author.id}`)}
+          onPress={() => author.id && router.push(`/user/${author.id}` as any)}
           style={styles.avatar}
         >
           {author.avatar ? (
@@ -50,9 +85,7 @@ export function RoundCard({ round, onLike }: Props) {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.author}>{author.display_name || 'Golfer'}</Text>
-          <Text style={styles.sub}>
-            {round.course_name} · {timeAgo(round.created_at)}
-          </Text>
+          <Text style={styles.sub}>{timeAgo(round.created_at)}</Text>
         </View>
         <View style={styles.scorePill}>
           <Text style={styles.scoreNum}>{round.total_score}</Text>
@@ -60,7 +93,7 @@ export function RoundCard({ round, onLike }: Props) {
         </View>
       </View>
 
-      {/* Photo or gradient scorecard */}
+      {/* Photo hero (only when a photo exists) */}
       {hasPhoto ? (
         <View style={styles.hero}>
           <Image source={{ uri: round.photos[0] }} style={styles.heroImg} contentFit="cover" />
@@ -68,31 +101,49 @@ export function RoundCard({ round, onLike }: Props) {
             colors={['transparent', 'rgba(19,42,28,0.85)']}
             style={StyleSheet.absoluteFillObject}
           />
-          <View style={styles.heroOverlay}>
-            <Text style={styles.heroCourse}>{round.course_name}</Text>
-            <Text style={styles.heroMeta}>
-              {round.holes_played} holes · Par {round.par}
-            </Text>
-          </View>
         </View>
-      ) : (
-        <View style={styles.scorecard}>
-          <View style={styles.scorecardStat}>
-            <Text style={styles.scorecardLabel}>Score</Text>
-            <Text style={styles.scorecardVal}>{round.total_score}</Text>
-          </View>
-          <View style={styles.scorecardDivider} />
-          <View style={styles.scorecardStat}>
-            <Text style={styles.scorecardLabel}>vs Par</Text>
-            <Text style={styles.scorecardVal}>{scoreLabel}</Text>
-          </View>
-          <View style={styles.scorecardDivider} />
-          <View style={styles.scorecardStat}>
-            <Text style={styles.scorecardLabel}>Holes</Text>
-            <Text style={styles.scorecardVal}>{round.holes_played}</Text>
-          </View>
+      ) : null}
+
+      {/* Course info block (replaces the score/par/holes box) */}
+      <Pressable
+        testID={`round-card-course-${round.id}`}
+        onPress={openCourse}
+        style={styles.courseBlock}
+      >
+        <View style={styles.courseIcon}>
+          <Ionicons name="golf-outline" size={20} color={colors.brandPrimary} />
         </View>
-      )}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.courseName} numberOfLines={1}>
+            {round.course_name}
+          </Text>
+          <Text style={styles.courseMeta} numberOfLines={1}>
+            {round.holes_played} holes · Par {round.par}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+      </Pressable>
+
+      {/* Newly unlocked achievements */}
+      {newAchievements.length > 0 ? (
+        <View style={styles.achWrap} testID={`round-card-achievements-${round.id}`}>
+          {newAchievements.map((a) => (
+            <View key={a.key} style={styles.achChip} testID={`round-card-ach-${a.key}`}>
+              <View style={styles.achIcon}>
+                <Ionicons name={iconFor(a.icon)} size={12} color="#fff" />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.achChipLabel} numberOfLines={1}>
+                  Achievement unlocked
+                </Text>
+                <Text style={styles.achChipTitle} numberOfLines={1}>
+                  {a.title}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {round.notes ? (
         <MentionText text={round.notes} style={styles.notes} numberOfLines={3} />
@@ -111,7 +162,7 @@ export function RoundCard({ round, onLike }: Props) {
         >
           <Ionicons
             name={round.liked_by_me ? 'heart' : 'heart-outline'}
-            size={22}
+            size={16}
             color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
           />
           <Text style={styles.actionText}>{round.like_count}</Text>
@@ -119,10 +170,10 @@ export function RoundCard({ round, onLike }: Props) {
         <Pressable
           testID={`round-card-comment-${round.id}`}
           hitSlop={8}
-          onPress={() => router.push(`/post/${round.id}`)}
+          onPress={openPost}
           style={styles.actionBtn}
         >
-          <Ionicons name="chatbubble-outline" size={20} color={colors.onSurface} />
+          <Ionicons name="chatbubble-outline" size={15} color={colors.onSurface} />
           <Text style={styles.actionText}>{round.comment_count}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -176,26 +227,58 @@ const styles = StyleSheet.create({
   scoreNum: { color: colors.onSurfaceInverse, fontSize: 18, fontWeight: '800', lineHeight: 20 },
   scoreDiff: { color: '#BBE9C9', fontSize: 11, fontWeight: '700', marginTop: -2 },
   hero: {
-    height: 200,
+    height: 180,
     borderRadius: radius.md,
     overflow: 'hidden',
     backgroundColor: colors.surfaceTertiary,
   },
   heroImg: { width: '100%', height: '100%' },
-  heroOverlay: { position: 'absolute', left: spacing.md, right: spacing.md, bottom: spacing.md },
-  heroCourse: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  heroMeta: { color: '#DCFCE7', fontSize: 13, fontWeight: '600', marginTop: 2 },
-  scorecard: {
+  courseBlock: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
-  scorecardStat: { flex: 1, alignItems: 'center' },
-  scorecardDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: spacing.sm },
-  scorecardLabel: { fontSize: 11, color: colors.muted, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
-  scorecardVal: { fontSize: 22, color: colors.onSurface, fontWeight: '800', marginTop: 2 },
+  courseIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  courseName: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
+  courseMeta: { fontSize: 12, color: colors.muted, fontWeight: '600', marginTop: 2 },
+  achWrap: { gap: spacing.sm },
+  achChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  achIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  achChipLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.onBrandTertiary,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    opacity: 0.8,
+  },
+  achChipTitle: { fontSize: 13, fontWeight: '800', color: colors.onBrandTertiary, marginTop: 1 },
   notes: { fontSize: 14, color: colors.onSurface, lineHeight: 20 },
   actions: {
     flexDirection: 'row',
@@ -205,7 +288,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.divider,
   },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  actionText: { fontSize: 14, color: colors.onSurface, fontWeight: '700' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  actionText: { fontSize: 13, color: colors.onSurface, fontWeight: '700' },
   subFooter: { fontSize: 12, color: colors.muted, fontWeight: '600' },
 });

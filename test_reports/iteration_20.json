@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 20 test pass covering (a) new comment-like endpoint & response flags, (b) new_achievements diff on POST /api/rounds, (c) RoundCard reformat + course-tap routing, (d) profile home_course tap + achievements collapse-locked-by-default UX, (e) comment heart toggle on post detail with optimistic updates, (f) MentionInput floating absolutely without layout jump. All 6 backend pytest cases pass. All 7 targeted frontend flows verified via mobile-viewport Playwright: RoundCard course tap → /course/Pebble%20Beach%20Golf%20Links, profile-home-course tap → /course/Whistling%20Oak, achievements 6→14 on expand and 14→6 on collapse (Show 8 locked achievements label), comment-like heart color toggles (muted grey → brandSecondary orange → muted grey) with optimistic count, mention-suggestions box uses position:absolute with y_delta=0 on the input (no jump). No deprecated Expo packages detected in the touched files. No React Native red screen. Minor console warning noted: props.pointerEvents deprecated → should migrate to style.pointerEvents (existing MentionInput uses pointerEvents='box-none' prop).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "MentionInput", "issue": "Uses deprecated `pointerEvents` prop (should be `style.pointerEvents`). Reference: /app/frontend/src/components/MentionInput.tsx:103"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_comment_like_new_achievements.py",
+    "/app/test_reports/pytest/iter20_results.xml"
+  ],
+  "action_items": [
+    "(minor) Replace `pointerEvents=\"box-none\"` on the suggestion box View with `style={{ pointerEvents: 'box-none' }}` in MentionInput.tsx to silence the RN deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1500+ lines — consider splitting into routers (auth, rounds, courses, admin) in a future iteration.",
+    "In profile.tsx, tapping the section header AND the toggle pill both flip the same state — that's intentional but not asserted; behaviour matches spec.",
+    "In RoundCard the outer Pressable (openPost) contains a child Pressable for course (openCourse). React Native web fires the innermost — verified working. On native this may double-fire; consider `hitSlop` isolation or event stopPropagation.",
+    "toggle_comment_like uses two round-trips ($pull/$addToSet then reload). It works but could return an atomic result via find_one_and_update; low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_comment_like_new_achievements.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (7/7 targeted flows)"},
+  "seed_data_creation": "Ephemeral: two throwaway users (TEST_iter20_a_* / TEST_iter20_b_*) + a few TEST_Course_* rounds and a TEST_comment via jordan@teebox.demo. No production data mutated.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend rate limiter is 5 registrations/minute per IP — space out fresh-user tests or reuse the seeded jordan/sam/reese accounts. To open a post detail deterministically, navigate directly to /post/{round_id} (clicking the outer RoundCard on web sometimes lands on the child course block Pressable instead). New_achievements is stored on the round doc at create time and surfaced via enrich_round for /feed, /rounds/{id}, /users/{id}/rounds.",
+  "rca_of_issue": "N/A — no bugs found in this iteration's task set."
+}

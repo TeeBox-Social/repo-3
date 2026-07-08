@@ -28,6 +28,7 @@ export default function Profile() {
   const [achievements, setAchievements] = useState<any | null>(null);
   const [wishlist, setWishlist] = useState<any[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLockedAchievements, setShowLockedAchievements] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -155,7 +156,22 @@ export default function Profile() {
             <Text style={styles.nameHc}> · {profile.handicap} HCP</Text>
           ) : null}
         </Text>
-        <Text style={styles.homeCourse}>{profile.home_course || 'No home course yet'}</Text>
+        {profile.home_course ? (
+          <Pressable
+            testID="profile-home-course"
+            onPress={() =>
+              router.push(`/course/${encodeURIComponent(profile.home_course)}` as any)
+            }
+            hitSlop={8}
+            style={styles.homeCourseRow}
+          >
+            <Ionicons name="home-outline" size={13} color={colors.onBrandTertiary} />
+            <Text style={[styles.homeCourse, styles.homeCourseText]}>{profile.home_course}</Text>
+            <Ionicons name="chevron-forward" size={13} color={colors.onBrandTertiary} />
+          </Pressable>
+        ) : (
+          <Text style={styles.homeCourse}>No home course yet</Text>
+        )}
         {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
       </View>
 
@@ -201,37 +217,87 @@ export default function Profile() {
       ) : null}
 
       {achievements && achievements.achievements ? (
-        <View style={styles.section} testID="profile-achievements">
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Achievements</Text>
-            <Text style={styles.sectionCount}>{achievements.total}/{achievements.achievements.length}</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.achRow}
-          >
-            {achievements.achievements.map((a: any) => (
-              <View
-                key={a.key}
-                testID={`achievement-${a.key}`}
-                style={[styles.achCard, !a.earned && styles.achCardLocked]}
+        (() => {
+          const all = achievements.achievements as any[];
+          const earned = all.filter((a) => a.earned);
+          const locked = all.filter((a) => !a.earned);
+          const list = showLockedAchievements ? [...earned, ...locked] : earned;
+          return (
+            <View style={styles.section} testID="profile-achievements">
+              <Pressable
+                testID="profile-achievements-header"
+                onPress={() => setShowLockedAchievements((v) => !v)}
+                style={styles.sectionHeaderRow}
+                hitSlop={6}
               >
-                <View style={[styles.achIcon, !a.earned && styles.achIconLocked]}>
-                  <Ionicons
-                    name={a.earned ? iconFor(a.icon) : 'lock-closed'}
-                    size={22}
-                    color={a.earned ? '#fff' : colors.muted}
-                  />
+                <View style={styles.sectionHeaderLeft}>
+                  <Text style={styles.sectionTitle}>Achievements</Text>
+                  {locked.length > 0 ? (
+                    <Ionicons
+                      name={showLockedAchievements ? 'chevron-up' : 'chevron-down'}
+                      size={16}
+                      color={colors.muted}
+                      style={{ marginBottom: spacing.md }}
+                    />
+                  ) : null}
                 </View>
-                <Text style={[styles.achTitle, !a.earned && { color: colors.muted }]}>{a.title}</Text>
-                <Text style={styles.achDesc} numberOfLines={2}>
-                  {a.desc}
+                <Text style={styles.sectionCount}>
+                  {achievements.total}/{all.length}
                 </Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+              </Pressable>
+              {list.length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyTitle}>No achievements yet</Text>
+                  <Text style={styles.emptySub}>
+                    Log a round to start earning your first badges.
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.achRow}
+                >
+                  {list.map((a: any) => (
+                    <View
+                      key={a.key}
+                      testID={`achievement-${a.key}`}
+                      style={[styles.achCard, !a.earned && styles.achCardLocked]}
+                    >
+                      <View style={[styles.achIcon, !a.earned && styles.achIconLocked]}>
+                        <Ionicons
+                          name={a.earned ? iconFor(a.icon) : 'lock-closed'}
+                          size={22}
+                          color={a.earned ? '#fff' : colors.muted}
+                        />
+                      </View>
+                      <Text style={[styles.achTitle, !a.earned && { color: colors.muted }]}>
+                        {a.title}
+                      </Text>
+                      <Text style={styles.achDesc} numberOfLines={2}>
+                        {a.desc}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+              {locked.length > 0 ? (
+                <Pressable
+                  testID="profile-achievements-toggle"
+                  onPress={() => setShowLockedAchievements((v) => !v)}
+                  style={styles.achToggleBtn}
+                  hitSlop={6}
+                >
+                  <Text style={styles.achToggleText}>
+                    {showLockedAchievements
+                      ? 'Hide locked achievements'
+                      : `Show ${locked.length} locked achievement${locked.length === 1 ? '' : 's'}`}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })()
       ) : null}
 
       <View style={styles.section} testID="profile-wishlist">
@@ -275,7 +341,7 @@ export default function Profile() {
         ) : profile.pinned_round ? null : (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>No rounds logged yet</Text>
-            <Text style={styles.emptySub}>Save your first scorecard and it'll show up here.</Text>
+            <Text style={styles.emptySub}>Save your first scorecard and it will show up here.</Text>
           </View>
         )}
       </View>
@@ -372,6 +438,16 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: '800', color: colors.onSurface },
   nameHc: { fontSize: 15, fontWeight: '700', color: colors.brandPrimary },
   homeCourse: { fontSize: 14, color: colors.muted, fontWeight: '600' },
+  homeCourseText: { color: colors.onBrandTertiary, fontWeight: '700' },
+  homeCourseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+  },
   bio: { fontSize: 14, color: colors.onSurface, textAlign: 'center', marginTop: spacing.sm },
   statsRow: {
     flexDirection: 'row',
@@ -430,6 +506,7 @@ const styles = StyleSheet.create({
   pinBadgeText: { fontSize: 11, fontWeight: '800', color: colors.onBrandTertiary, letterSpacing: 0.4 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface, marginBottom: spacing.md },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionCount: {
     fontSize: 12,
     fontWeight: '800',
@@ -462,6 +539,17 @@ const styles = StyleSheet.create({
   achIconLocked: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   achTitle: { fontSize: 13, fontWeight: '800', color: colors.onSurface },
   achDesc: { fontSize: 11, color: colors.muted, lineHeight: 15 },
+  achToggleBtn: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  achToggleText: { fontSize: 12, fontWeight: '800', color: colors.brandPrimary },
   emptyBox: {
     padding: spacing.xl,
     backgroundColor: colors.surfaceSecondary,

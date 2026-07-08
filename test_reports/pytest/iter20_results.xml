@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="2" failures="0" skipped="0" tests="6" time="2.649" timestamp="2026-07-08T12:55:15.319364+00:00" hostname="agent-env-b817c040-4312-4d9c-9534-fade4d11af2f"><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestNewAchievements" name="test_first_round_returns_first_round_achievement" time="0.404" /><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestNewAchievements" name="test_subsequent_uneventful_round_returns_empty" time="0.439" /><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestNewAchievements" name="test_new_achievements_persisted_in_feed_and_round" time="0.484" /><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestCommentLike" name="test_toggle_and_persistence" time="0.973" /><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestCommentLike" name="test_like_missing_comment_returns_404" time="0.111"><error message="failed on setup with &quot;AssertionError: {&quot;error&quot;:&quot;Rate limit exceeded: 5 per 1 minute&quot;}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">backend/tests/test_iter20_comment_like_new_achievements.py:36: in user_a
+    u = _register(s, "a")
+        ^^^^^^^^^^^^^^^^^
+backend/tests/test_iter20_comment_like_new_achievements.py:26: in _register
+    assert r.status_code == 200, r.text
+E   AssertionError: {"error":"Rate limit exceeded: 5 per 1 minute"}
+E   assert 429 == 200
+E    +  where 429 = &lt;Response [429]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter20_comment_like_new_achievements.TestAchievementsEndpoint" name="test_shape" time="0.150"><error message="failed on setup with &quot;AssertionError: {&quot;error&quot;:&quot;Rate limit exceeded: 5 per 1 minute&quot;}&#10;assert 429 == 200&#10; +  where 429 = &lt;Response [429]&gt;.status_code&quot;">backend/tests/test_iter20_comment_like_new_achievements.py:36: in user_a
+    u = _register(s, "a")
+        ^^^^^^^^^^^^^^^^^
+backend/tests/test_iter20_comment_like_new_achievements.py:26: in _register
+    assert r.status_code == 200, r.text
+E   AssertionError: {"error":"Rate limit exceeded: 5 per 1 minute"}
+E   assert 429 == 200
+E    +  where 429 = &lt;Response [429]&gt;.status_code</error></testcase></testsuite></testsuites>

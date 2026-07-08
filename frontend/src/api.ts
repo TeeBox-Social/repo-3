@@ -172,6 +172,11 @@ export const api = {
   getComments: (id: string) => request<any[]>(`/rounds/${id}/comments`),
   addComment: (id: string, text: string, mentions: string[] = []) =>
     request<any>(`/rounds/${id}/comments`, { method: 'POST', body: JSON.stringify({ text, mentions }) }),
+  toggleCommentLike: (roundId: string, commentId: string) =>
+    request<{ liked: boolean; like_count: number }>(
+      `/rounds/${roundId}/comments/${commentId}/like`,
+      { method: 'POST' },
+    ),
 
   getUser: (id: string) => request<any>(`/users/${id}`),
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),

@@ -98,9 +98,9 @@ export function MentionInput({
   };
 
   return (
-    <View style={{ width: '100%' }}>
+    <View style={{ width: '100%', position: 'relative' }}>
       {suggestions.length > 0 || (active && loading) ? (
-        <View style={styles.suggestBox} testID="mention-suggestions">
+        <View style={styles.suggestBox} testID="mention-suggestions" pointerEvents="box-none">
           {loading ? (
             <View style={styles.suggestLoading}>
               <ActivityIndicator size="small" color={colors.brandPrimary} />
@@ -151,12 +151,18 @@ export function MentionInput({
 
 const styles = StyleSheet.create({
   suggestBox: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: '100%',
+    marginBottom: spacing.xs,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: spacing.xs,
     overflow: 'hidden',
+    zIndex: 999,
+    elevation: 12,
     ...shadow.soft,
   },
   suggestRow: {

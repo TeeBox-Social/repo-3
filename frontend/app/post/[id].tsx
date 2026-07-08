@@ -262,7 +262,20 @@ export default function PostDetail() {
             <View style={styles.commentsSection}>
               <Text style={styles.sectionTitle}>Comments</Text>
               {comments && comments.length > 0 ? (
-                comments.map((c) => <CommentRow key={c.id} c={c} />)
+                comments.map((c) => (
+                  <CommentRow
+                    key={c.id}
+                    c={c}
+                    roundId={String(id)}
+                    onLikeChange={(next) =>
+                      setComments((prev) =>
+                        prev
+                          ? prev.map((x) => (x.id === next.id ? { ...x, ...next } : x))
+                          : prev,
+                      )
+                    }
+                  />
+                ))
               ) : (
                 <Text style={styles.emptyComments}>Be the first to say something nice.</Text>
               )}
@@ -307,13 +320,41 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CommentRow({ c }: { c: any }) {
+function CommentRow({
+  c,
+  roundId,
+  onLikeChange,
+}: {
+  c: any;
+  roundId: string;
+  onLikeChange: (next: { id: string; liked_by_me: boolean; like_count: number }) => void;
+}) {
   const initials = (c.author?.display_name || 'G')
     .split(' ')
     .map((s: string) => s[0])
     .slice(0, 2)
     .join('')
     .toUpperCase();
+
+  const onToggle = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    // Optimistic
+    const nowLiked = !c.liked_by_me;
+    const nextCount = Math.max(0, (c.like_count || 0) + (nowLiked ? 1 : -1));
+    onLikeChange({ id: c.id, liked_by_me: nowLiked, like_count: nextCount });
+    try {
+      const res = await api.toggleCommentLike(roundId, c.id);
+      onLikeChange({ id: c.id, liked_by_me: res.liked, like_count: res.like_count });
+    } catch {
+      // Revert
+      onLikeChange({
+        id: c.id,
+        liked_by_me: !nowLiked,
+        like_count: Math.max(0, nextCount + (nowLiked ? -1 : 1)),
+      });
+    }
+  };
+
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentAvatar}>
@@ -331,6 +372,21 @@ function CommentRow({ c }: { c: any }) {
           mentionStyle={styles.mention}
         />
       </View>
+      <Pressable
+        testID={`comment-like-${c.id}`}
+        onPress={onToggle}
+        hitSlop={10}
+        style={styles.commentLikeBtn}
+      >
+        <Ionicons
+          name={c.liked_by_me ? 'heart' : 'heart-outline'}
+          size={16}
+          color={c.liked_by_me ? colors.brandSecondary : colors.muted}
+        />
+        {(c.like_count || 0) > 0 ? (
+          <Text style={styles.commentLikeCount}>{c.like_count}</Text>
+        ) : null}
+      </Pressable>
     </View>
   );
 }
@@ -429,7 +485,16 @@ const styles = StyleSheet.create({
   commentsSection: { gap: spacing.md, marginTop: spacing.md },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.onSurface },
   emptyComments: { color: colors.muted, fontSize: 14, fontStyle: 'italic' },
-  commentRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.sm },
+  commentRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.sm, alignItems: 'flex-start' },
+  commentLikeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 14,
+  },
+  commentLikeCount: { fontSize: 12, color: colors.muted, fontWeight: '700' },
   commentAvatar: {
     width: 36,
     height: 36,
