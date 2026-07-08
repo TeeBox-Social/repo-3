@@ -17,7 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
-import { HoleGrid } from '@/src/components/HoleGrid';
+import { MentionInput } from '@/src/components/MentionInput';
 import { CourseAutocomplete } from '@/src/components/CourseAutocomplete';
 import { api } from '@/src/api';
 
@@ -48,8 +48,6 @@ export default function LogRound() {
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
-  const [holeScores, setHoleScores] = useState<string[]>(Array(18).fill(''));
-  const [showHoles, setShowHoles] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -111,23 +109,7 @@ export default function LogRound() {
     setNotes('');
     setPhotos([]);
     setPrefillSource(null);
-    setHoleScores(Array(18).fill(''));
-    setShowHoles(false);
     setErr(null);
-  };
-
-  const setHoleScore = (idx: number, v: string) => {
-    setHoleScores((prev) => {
-      const next = [...prev];
-      next[idx] = v;
-      // Auto-sum into total_score when at least one hole is filled
-      const nums = next.map((s) => Number(s) || 0);
-      const filled = nums.filter((n) => n > 0);
-      if (filled.length > 0) {
-        setTotalScore(String(nums.reduce((a, b) => a + b, 0)));
-      }
-      return next;
-    });
   };
 
   const onSubmit = async () => {
@@ -147,19 +129,17 @@ export default function LogRound() {
     }
     setLoading(true);
     try {
-      const holeNums = holeScores.map((s) => Number(s) || 0);
-      const hasHoles = holeNums.some((n) => n > 0);
       await api.createRound({
         course_name: courseName.trim(),
         total_score: score,
-        par: Number(par) || 72,
+        par: Number(par) || (holes === '9' ? 36 : 72),
         holes_played: Number(holes) || 18,
         fairways_hit: fairways ? Number(fairways) : null,
         greens_in_regulation: gir ? Number(gir) : null,
         putts: putts ? Number(putts) : null,
         notes: notes.trim(),
         photos,
-        hole_scores: hasHoles ? holeNums : [],
+        hole_scores: [],
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       resetForm();
@@ -222,15 +202,33 @@ export default function LogRound() {
           />
 
           <View style={styles.row}>
-            <TBInput
-              label="Total score"
-              testID="log-score"
-              value={totalScore}
-              onChangeText={setTotalScore}
-              keyboardType="number-pad"
-              placeholder="82"
-              containerStyle={{ flex: 1 }}
-            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dropdownLabel}>Holes</Text>
+              <View style={styles.holePickerRow}>
+                {(['9', '18'] as const).map((h) => {
+                  const active = holes === h;
+                  return (
+                    <Pressable
+                      key={h}
+                      testID={`log-holes-${h}`}
+                      onPress={() => {
+                        setHoles(h);
+                        // When switching hole-count, auto-flip the par default
+                        // to keep it sensible (36 for 9, 72 for 18). Only do
+                        // this if the user hasn't hand-typed a custom par.
+                        if (h === '9' && (!par || par === '72' || par === '36')) setPar('36');
+                        if (h === '18' && (!par || par === '36' || par === '72')) setPar('72');
+                      }}
+                      style={[styles.holePill, active && styles.holePillActive]}
+                    >
+                      <Text style={[styles.holePillText, active && styles.holePillTextActive]}>
+                        {h}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
             <TBInput
               label="Par"
               testID="log-par"
@@ -240,11 +238,12 @@ export default function LogRound() {
               containerStyle={{ flex: 1 }}
             />
             <TBInput
-              label="Holes"
-              testID="log-holes"
-              value={holes}
-              onChangeText={setHoles}
+              label="Total score"
+              testID="log-score"
+              value={totalScore}
+              onChangeText={setTotalScore}
               keyboardType="number-pad"
+              placeholder={holes === '9' ? '41' : '82'}
               containerStyle={{ flex: 1 }}
             />
           </View>
@@ -256,7 +255,7 @@ export default function LogRound() {
               value={fairways}
               onChangeText={setFairways}
               keyboardType="number-pad"
-              placeholder="/14"
+              placeholder={holes === '9' ? '/7' : '/14'}
               containerStyle={{ flex: 1 }}
             />
             <TBInput
@@ -265,7 +264,7 @@ export default function LogRound() {
               value={gir}
               onChangeText={setGir}
               keyboardType="number-pad"
-              placeholder="/18"
+              placeholder={holes === '9' ? '/9' : '/18'}
               containerStyle={{ flex: 1 }}
             />
             <TBInput
@@ -274,44 +273,22 @@ export default function LogRound() {
               value={putts}
               onChangeText={setPutts}
               keyboardType="number-pad"
-              placeholder="30"
+              placeholder={holes === '9' ? '15' : '30'}
               containerStyle={{ flex: 1 }}
             />
           </View>
 
-          <TBInput
-            label="Notes"
-            testID="log-notes"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            placeholder="How did it go? Anything memorable?"
-            style={{ minHeight: 90, textAlignVertical: 'top' }}
-          />
-
-          <View style={styles.holesHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sectionLabel}>Hole-by-hole</Text>
-              <Text style={styles.holesSub}>Optional — auto-sums into total score.</Text>
-            </View>
-            <Pressable
-              testID="log-toggle-holes"
-              onPress={() => setShowHoles((v) => !v)}
-              style={styles.togglePill}
-            >
-              <Text style={styles.togglePillText}>{showHoles ? 'Hide' : 'Show'}</Text>
-              <Ionicons
-                name={showHoles ? 'chevron-up' : 'chevron-down'}
-                size={14}
-                color={colors.brandPrimary}
-              />
-            </Pressable>
+          <View style={{ gap: 4 }}>
+            <Text style={styles.dropdownLabel}>Notes</Text>
+            <MentionInput
+              testID="log-notes"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              placeholder="How did it go? Type @ to tag a friend."
+              style={styles.notesInput}
+            />
           </View>
-          {showHoles ? (
-            <View testID="log-hole-grid">
-              <HoleGrid scores={holeScores} onChangeScore={setHoleScore} />
-            </View>
-          ) : null}
 
           <Text style={styles.sectionLabel}>Photos ({photos.length}/3)</Text>
           <View style={styles.photoRow}>
@@ -449,6 +426,40 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   tipText: { flex: 1, fontSize: 12, color: colors.onSurfaceTertiary, lineHeight: 17 },
+  holePickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  holePill: {
+    flex: 1,
+    height: 46,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  holePillActive: {
+    borderColor: colors.brandPrimary,
+    backgroundColor: colors.brandPrimary,
+  },
+  holePillText: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
+  holePillTextActive: { color: '#fff' },
+  dropdownLabel: { fontSize: 13, fontWeight: '700', color: colors.onSurface, letterSpacing: 0.2 },
+  notesInput: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: 10,
+    fontSize: 15,
+    color: colors.onSurface,
+  },
   holesHeader: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -622,28 +622,55 @@ async def unpin_round(user=Depends(get_current_user)):
 @api_router.get("/users/{user_id}/achievements")
 async def get_achievements(user_id: str, user=Depends(get_current_user)):
     rounds = [r async for r in rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1)]
-    scores = [r["total_score"] for r in rounds]
+    # Split by holes-played so 9-hole rounds don't unfairly grant 18-hole badges.
+    rounds_18 = [r for r in rounds if int(r.get("holes_played") or 18) >= 18]
+    rounds_9 = [r for r in rounds if int(r.get("holes_played") or 18) == 9]
+    scores_18 = [r["total_score"] for r in rounds_18]
+    scores_9 = [r["total_score"] for r in rounds_9]
     courses = {r["course_name"] for r in rounds}
-    # Consecutive rounds <= 80 count
+
+    # Consecutive 18-hole rounds <= 80 count as "hot streak"
     streak = 0
     best_streak = 0
-    for s in scores:
+    for s in scores_18:
         if s <= 80:
             streak += 1
             best_streak = max(best_streak, streak)
         else:
             streak = 0
 
+    # For 9-hole: use 40 as the equivalent "hot streak" threshold
+    streak9 = 0
+    best_streak9 = 0
+    for s in scores_9:
+        if s <= 40:
+            streak9 += 1
+            best_streak9 = max(best_streak9, streak9)
+        else:
+            streak9 = 0
+
     defs = [
         {"key": "first_round", "title": "On the tee", "desc": "Logged your first round.", "icon": "flag", "earned": len(rounds) >= 1},
-        {"key": "sub_100", "title": "Broke 100", "desc": "Posted a round under 100.", "icon": "trophy", "earned": any(s < 100 for s in scores)},
-        {"key": "sub_90", "title": "Broke 90", "desc": "Posted a round under 90.", "icon": "trophy", "earned": any(s < 90 for s in scores)},
-        {"key": "sub_80", "title": "First sub-80", "desc": "Posted a round under 80.", "icon": "trophy", "earned": any(s < 80 for s in scores)},
-        {"key": "sub_70", "title": "Sub-70 club", "desc": "Posted a round under 70.", "icon": "star", "earned": any(s < 70 for s in scores)},
+        # 18-hole milestones
+        {"key": "sub_100", "title": "Broke 100", "desc": "Posted an 18-hole round under 100.", "icon": "trophy", "earned": any(s < 100 for s in scores_18)},
+        {"key": "sub_90", "title": "Broke 90", "desc": "Posted an 18-hole round under 90.", "icon": "trophy", "earned": any(s < 90 for s in scores_18)},
+        {"key": "sub_80", "title": "First sub-80", "desc": "Posted an 18-hole round under 80.", "icon": "trophy", "earned": any(s < 80 for s in scores_18)},
+        {"key": "sub_70", "title": "Sub-70 club", "desc": "Posted an 18-hole round under 70.", "icon": "star", "earned": any(s < 70 for s in scores_18)},
+        # 9-hole milestones — awarded ONLY on 9-hole rounds, so a great 18-hole
+        # round doesn't accidentally credit these.
+        {"key": "sub_50_9", "title": "Broke 50 (9)", "desc": "Posted a 9-hole round under 50.", "icon": "trophy", "earned": any(s < 50 for s in scores_9)},
+        {"key": "sub_45_9", "title": "Broke 45 (9)", "desc": "Posted a 9-hole round under 45.", "icon": "trophy", "earned": any(s < 45 for s in scores_9)},
+        {"key": "sub_40_9", "title": "Broke 40 (9)", "desc": "Posted a 9-hole round under 40.", "icon": "trophy", "earned": any(s < 40 for s in scores_9)},
+        {"key": "sub_par_9", "title": "Broke par (9)", "desc": "Beat par on a 9-hole round.", "icon": "star", "earned": any(
+            r["total_score"] < int(r.get("par") or 36) for r in rounds_9
+        )},
+        # Volume / breadth
         {"key": "ten_rounds", "title": "Regular", "desc": "Logged 10 rounds.", "icon": "golf", "earned": len(rounds) >= 10},
         {"key": "fifty_rounds", "title": "Half-century", "desc": "Logged 50 rounds.", "icon": "medal", "earned": len(rounds) >= 50},
         {"key": "course_collector", "title": "Course collector", "desc": "Played 5 different courses.", "icon": "map", "earned": len(courses) >= 5},
-        {"key": "hot_streak", "title": "Hot streak", "desc": "3 rounds in a row at or under 80.", "icon": "flame", "earned": best_streak >= 3},
+        # Streaks
+        {"key": "hot_streak", "title": "Hot streak", "desc": "3 eighteen-hole rounds in a row at or under 80.", "icon": "flame", "earned": best_streak >= 3},
+        {"key": "hot_streak_9", "title": "Hot streak (9)", "desc": "3 nine-hole rounds in a row at or under 40.", "icon": "flame", "earned": best_streak9 >= 3},
     ]
     return {
         "total": sum(1 for d in defs if d["earned"]),
