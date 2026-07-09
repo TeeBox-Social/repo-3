@@ -99,3 +99,13 @@ class TokenIn(BaseModel):
 
 class ResendVerifyIn(BaseModel):
     email: EmailStr
+
+
+class GoogleAuthIn(BaseModel):
+    """Payload from the mobile/web client after Emergent OAuth redirect.
+
+    ``session_id`` is the temporary token from the ``#session_id=`` fragment
+    returned by ``auth.emergentagent.com``. The backend swaps it once with
+    Emergent's session-data API to fetch the verified Google identity.
+    """
+    session_id: str = Field(min_length=8, max_length=200)

@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 23 (Emergent-managed Google Sign-In with email-match merge) — comprehensive backend + frontend testing. 11/11 pytest cases pass. Backend: real HTTP test confirmed bogus session_id returns 401, min_length validation returns 422. In-process TestClient with httpx.AsyncClient monkey-patched to stub Emergent session-data verified: (a) new user is created with hashed_password=None, email_verified=true, auth_providers=['google']; (b) existing email/password user is merged — password hash untouched, custom display_name and avatar preserved, blank display_name/avatar filled from Google, prior lockout state (failed_login_attempts + lockout_until) cleared; (c) Emergent 401 maps to 401, missing email maps to 400. Legacy iter22 flows regression: seeded login+me, refresh/logout with token rotation & reuse detection, forgot+reset password flow, and 10-failure lockout all still work. Frontend Playwright: sign-in and sign-up screens show their respective Google buttons (testID='sign-in-google' / 'sign-up-google') below the submit button separated by an 'or' divider, tapping triggers a full-page redirect to https://auth.emergentagent.com/oauth/?redirect=<origin>/ , and navigating to /#session_id=fakestringabc triggers exactly one POST /api/auth/google (401) with the URL fragment cleaned up regardless of failure.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_google_auth.py",
+    "/app/test_reports/pytest/iter23_results.xml"
+  ],
+  "action_items": [
+    "None from testing — iteration 23 is ready to ship. Optional real-world smoke test: sign in with a real Google account against the deployed URL, confirm the new user lands on /(tabs) and their avatar/name flow through. All automated flows pass."
+  ],
+  "critical_code_review_comments": [
+    "Nice: auth.py :422–476 merge logic is defensively conservative — it never overwrites a chosen display_name or a custom avatar, and only ADDS 'google' to auth_providers via a set union. Password hash is completely untouched during merge (verified in test_existing_user_merged_password_untouched).",
+    "Nice: any successful Google login unconditionally clears failed_login_attempts / lockout_until (auth.py :469–476). Verified against a doc that had 3 failures + a future lockout_until.",
+    "Nice: models.py :104 GoogleAuthIn enforces session_id min_length=8, so obviously-empty payloads are rejected at the pydantic layer with 422 (verified).",
+    "Nice: frontend _layout.tsx :96–111 processes #session_id ONCE on mount using window.history.replaceState BEFORE calling signInWithGoogleSession — so even if the network call fails, the fragment is scrubbed from the URL and won't be resubmitted on hot reload (verified: fake session_id posted, 401 returned, URL was cleaned to /sign-in).",
+    "Observation (not a bug): GoogleSignInButton.tsx :44–50 uses window.location.origin + '/' as the web redirect. That plus EMERGENT_AUTH_URL trailing slash produces the URL `https://auth.emergentagent.com/oauth/?redirect=...` (Emergent redirects `/` → `/oauth/`). Redirect param carries through correctly; nothing to fix.",
+    "Observation: auth.py imports httpx lazily inside google_sign_in (line 398) — nice for cold-start latency on rare-path endpoints, and made monkey-patching straightforward."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_google_auth.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 — 2 real-HTTP invalid-session tests, 3 mocked new/merge tests, 2 mocked upstream-failure tests, 4 legacy regression tests)",
+    "frontend": "100% (3/3 flows: sign-in google button + divider, sign-up google button + full-page redirect to auth.emergentagent.com, /#session_id= handler posts to /api/auth/google and cleans URL)"
+  },
+  "seed_data_creation": "Tests seed disposable users directly in Mongo via sync pymongo (prefixed `test-iter23-*@teebox.demo`) and clean them up in the same test function. Seeded demo users (reese/jordan/sam) untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter23_google_auth.py uses two patterns worth reusing: (1) session-scoped FastAPI TestClient fixture — critical because motor's client is bound to the loop where it was first used, so per-test TestClient instances re-create the loop and cause 'Event loop is closed' on the 2nd test onwards (same trap iter22 hit with async fixtures). (2) `_patched_httpx()` monkey-patches httpx.AsyncClient with a stub whose async context manager + async .get returns a canned response — pattern reusable any time a router calls an outbound httpx AsyncClient. Real-HTTP invalid-session test accepts (401, 502) because Emergent's response is out of our control.",
+  "rca_of_issue": "No production bug. One test-harness issue while writing this suite: per-test TestClient instances caused 'RuntimeError: Event loop is closed' from motor after the first test — because AsyncIOMotorClient captures the current running loop and TestClient recreates the loop per instance. Fixed by making test_client a session-scoped fixture."
+}

@@ -32,7 +32,7 @@ setTimeout(() => {
 }, 2000);
 
 function ProtectedRouter() {
-  const { user, loading } = useAuth();
+  const { user, loading, signInWithGoogleSession } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const navState = useRootNavigationState();
@@ -61,13 +61,21 @@ function ProtectedRouter() {
   //   teebox://share?course=...&score=82&par=72&notes=...
   //   teebox://reset-password?token=...
   //   teebox://verify-email?token=...
+  //   teebox://auth#session_id=...  (Emergent Google redirect on mobile)
   useEffect(() => {
     const parse = (url: string | null) => {
       if (!url) return;
       try {
+        // session_id lives in the hash fragment; Linking.parse strips it.
+        const sidMatch = url.match(/[#?&]session_id=([^&]+)/);
+        const sessionId = sidMatch ? decodeURIComponent(sidMatch[1]) : null;
         const parsed = Linking.parse(url);
         const target = parsed.hostname || parsed.path || '';
         const q = parsed.queryParams || {};
+        if (sessionId && (target === 'auth' || target === '' || target === '/')) {
+          signInWithGoogleSession(sessionId).catch(() => {});
+          return;
+        }
         if (target === 'share' && user) {
           router.push({ pathname: '/(tabs)/log', params: q as any });
         } else if (target === 'reset-password') {
@@ -80,7 +88,27 @@ function ProtectedRouter() {
     Linking.getInitialURL().then(parse);
     const sub = Linking.addEventListener('url', (e) => parse(e.url));
     return () => sub.remove();
-  }, [user, router]);
+  }, [user, router, signInWithGoogleSession]);
+
+  // ---- Web-only Google OAuth redirect handler ----
+  // Emergent OAuth redirects back to `<origin>/#session_id=...`. We must
+  // process that ONCE on mount before the router bounces us to /sign-in.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    const combined = search + '&' + hash;
+    const m = combined.match(/[#?&]session_id=([^&]+)/);
+    if (!m) return;
+    const sessionId = decodeURIComponent(m[1]);
+    try {
+      window.history.replaceState(null, '', window.location.pathname);
+    } catch {}
+    signInWithGoogleSession(sessionId).catch((e) => {
+      console.warn('Google sign-in failed:', e?.message || e);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFCF8' } }}>

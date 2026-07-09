@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, IMAGES, radius, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
+import { GoogleSignInButton } from '@/src/components/GoogleSignInButton';
 import { useAuth } from '@/src/auth-context';
 
 const { height } = Dimensions.get('window');
@@ -208,6 +209,15 @@ export default function SignIn() {
             onPress={onSubmit}
             style={{ marginTop: spacing.md }}
           />
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          <GoogleSignInButton
+            testID="sign-in-google"
+            onError={(msg) => setErr(msg)}
+          />
           <Pressable
             testID="sign-in-forgot-password"
             onPress={() => router.push('/(auth)/forgot-password' as any)}
@@ -251,6 +261,15 @@ const styles = StyleSheet.create({
   linkText: { fontSize: 14, color: colors.muted },
   linkStrong: { color: colors.brandPrimary, fontWeight: '800' },
   forgotText: { fontSize: 14, color: colors.brandPrimary, fontWeight: '700' },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.divider },
+  dividerText: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
   eyeBtn: {
     width: 32,
     height: 32,

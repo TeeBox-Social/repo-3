@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
 import { TBButton } from '@/src/components/TBButton';
+import { GoogleSignInButton } from '@/src/components/GoogleSignInButton';
 import { TBInput } from '@/src/components/TBInput';
 import { useAuth } from '@/src/auth-context';
 
@@ -123,6 +124,16 @@ export default function SignUp() {
             onPress={onSubmit}
             style={{ marginTop: spacing.md }}
           />
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          <GoogleSignInButton
+            testID="sign-up-google"
+            label="Sign up with Google"
+            onError={(msg) => setErr(msg)}
+          />
           <Pressable
             testID="sign-up-go-signin"
             onPress={() => router.replace('/(auth)/sign-in')}
@@ -164,4 +175,13 @@ const styles = StyleSheet.create({
   errText: { color: colors.error, fontWeight: '700', fontSize: 13, marginTop: -4 },
   linkText: { fontSize: 14, color: colors.muted },
   linkStrong: { color: colors.brandPrimary, fontWeight: '800' },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.divider },
+  dividerText: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
 });

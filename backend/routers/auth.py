@@ -33,6 +33,7 @@ from helpers import (
 )
 from models import (
     AuthOut,
+    GoogleAuthIn,
     LoginIn,
     ProfileUpdate,
     RefreshIn,
@@ -382,3 +383,101 @@ async def resend_verification(
             build_verify_url(token),
         )
     return {"ok": True, "message": "If that email is registered and unverified, we've resent the link."}
+
+
+# ---- Google Sign-In (Emergent OAuth) -------------------------------------
+EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+
+
+@router.post("/auth/google", response_model=AuthOut)
+@limiter.limit("20/minute; 200/hour")
+async def google_sign_in(request: Request, data: GoogleAuthIn):
+    """Verify an Emergent OAuth session_id, upsert by email, and issue our
+    own JWT access+refresh tokens so the rest of the app doesn't care that the
+    user came in via Google."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            resp = await http.get(
+                EMERGENT_SESSION_DATA_URL,
+                headers={"X-Session-ID": data.session_id},
+            )
+        if resp.status_code != 200:
+            logger.warning("Emergent OAuth session-data returned %s: %s", resp.status_code, resp.text[:200])
+            raise HTTPException(status_code=401, detail="Google session invalid or expired")
+        payload = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Emergent OAuth verify failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not reach Google auth service")
+
+    email = (payload.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account did not share an email")
+    google_name = (payload.get("name") or "").strip()
+    picture = (payload.get("picture") or "").strip() or None
+
+    existing = await users_col.find_one({"email": email})
+    if existing:
+        # Merge: link the Google provider onto the existing account without
+        # touching their password or profile fields.
+        providers = set(existing.get("auth_providers") or [])
+        providers.add("google")
+        if not existing.get("email_verified"):
+            # Google confirmed the email address is real.
+            providers.add("email_verified_by_google")
+        set_fields: dict = {
+            "auth_providers": sorted(providers - {"email_verified_by_google"}),
+            "email_verified": True,
+            "google_last_login_at": now_iso(),
+        }
+        # Only fill in avatar if the user hasn't already uploaded a custom one.
+        if picture and not existing.get("avatar"):
+            set_fields["avatar"] = picture
+        # Never overwrite a chosen display name; only fill it when blank.
+        if google_name and not existing.get("display_name"):
+            set_fields["display_name"] = google_name
+        await users_col.update_one({"id": existing["id"]}, {"$set": set_fields})
+        user_doc = await users_col.find_one({"id": existing["id"]}, {"_id": 0, "hashed_password": 0})
+    else:
+        # New account — no password, provider list = ['google'].
+        new_id = str(uuid.uuid4())
+        user_doc = {
+            "id": new_id,
+            "email": email,
+            # No password login until they set one via password reset.
+            "hashed_password": None,
+            "display_name": google_name or email.split("@", 1)[0],
+            "avatar": picture,
+            "home_course": "",
+            "handicap": None,
+            "bio": "",
+            "notification_prefs": dict(DEFAULT_NOTIFICATION_PREFS),
+            "email_verified": True,
+            "auth_providers": ["google"],
+            "failed_login_attempts": 0,
+            "created_at": now_iso(),
+            "google_last_login_at": now_iso(),
+        }
+        await users_col.insert_one(user_doc)
+        user_doc.pop("_id", None)
+        user_doc.pop("hashed_password", None)
+
+    # Any successful Google login clears any brute-force lockout state.
+    await users_col.update_one(
+        {"id": user_doc["id"]},
+        {"$set": {
+            "failed_login_attempts": 0,
+            "failed_login_window_start": None,
+            "lockout_until": None,
+        }},
+    )
+
+    access = create_access_token(user_doc["id"])
+    refresh = await create_refresh_token(user_doc["id"])
+    user_doc["is_admin"] = is_admin_user(user_doc)
+    user_doc["notification_prefs"] = notification_prefs_of(user_doc)
+    user_doc["email_verified"] = True
+    return {"access_token": access, "refresh_token": refresh, "user": user_doc}

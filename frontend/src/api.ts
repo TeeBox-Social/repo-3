@@ -219,6 +219,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
+  googleSignIn: (session_id: string) =>
+    request<{ access_token: string; refresh_token: string; user: User }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ session_id }),
+    }),
 
   getUser: (id: string) => request<any>(`/users/${id}`),
   getUserRounds: (id: string) => request<any[]>(`/users/${id}/rounds`),

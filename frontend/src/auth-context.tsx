@@ -18,6 +18,7 @@ type AuthState = {
     home_course?: string;
     handicap?: number;
   }) => Promise<void>;
+  signInWithGoogleSession: (session_id: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   setUser: (u: User) => void;
@@ -90,14 +91,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const signInWithGoogleSession = useCallback(async (session_id: string) => {
+    const res = await api.googleSignIn(session_id);
+    await saveTokens(res.access_token, res.refresh_token);
+    setUser(res.user);
+  }, []);
+
   const signOut = useCallback(async () => {
     await api.logout();
     setUser(null);
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, signIn, signUp, signOut, refresh: bootstrap, setUser }),
-    [user, loading, signIn, signUp, signOut, bootstrap],
+    () => ({
+      user,
+      loading,
+      signIn,
+      signUp,
+      signInWithGoogleSession,
+      signOut,
+      refresh: bootstrap,
+      setUser,
+    }),
+    [user, loading, signIn, signUp, signInWithGoogleSession, signOut, bootstrap],
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
