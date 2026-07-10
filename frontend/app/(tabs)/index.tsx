@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { RoundCard } from '@/src/components/RoundCard';
+import { FeedNativeAd } from '@/src/components/FeedNativeAd';
 import { useAuth } from '@/src/auth-context';
 import { TBButton } from '@/src/components/TBButton';
 
@@ -150,7 +151,14 @@ export default function Feed() {
             progressViewOffset={HEADER_H}
           />
         }
-        renderItem={({ item }) => <RoundCard round={item} onLike={() => onLike(item.id)} />}
+        renderItem={({ item, index }) => (
+          <>
+            {/* Ad slot: after every 5th real post so ads are visible only once
+                the user has seen a few genuine rounds first. */}
+            {index > 0 && index % 5 === 0 ? <FeedNativeAd /> : null}
+            <RoundCard round={item} onLike={() => onLike(item.id)} />
+          </>
+        )}
         ListHeaderComponent={<VerifyBanner />}
         ListEmptyComponent={
           <View style={styles.empty}>

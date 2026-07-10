@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { AuthProvider, useAuth } from '@/src/auth-context';
+import { initAdMob } from '@/src/components/FeedNativeAd';
 
 LogBox.ignoreAllLogs(true);
 
@@ -135,6 +136,12 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
+
+  // Initialize AdMob SDK once per app session. Best-effort: no-op on web /
+  // Expo Go where the native module isn't present.
+  useEffect(() => {
+    initAdMob().catch(() => {});
+  }, []);
 
   // Render the tree even while fonts are still loading — the splash timer
   // above will retract the native splash after at most 5s. Falling back to

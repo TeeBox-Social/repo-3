@@ -17,7 +17,9 @@
         "NSLocationWhenInUseUsageDescription": "Find golf courses near you",
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["teebox"]
+            "CFBundleURLSchemes": [
+              "teebox"
+            ]
           }
         ]
       }
@@ -29,13 +31,24 @@
         "backgroundColor": "#15803D"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["READ_MEDIA_IMAGES", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": false,
-          "data": [{ "scheme": "teebox" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "teebox"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -55,6 +68,28 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#132A1C"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-1035050955026373~8956251041",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511",
+          "skAdNetworkItems": [
+            "cstr6suwn9.skadnetwork",
+            "4fzdc2evr5.skadnetwork",
+            "4pfyvq9l8r.skadnetwork",
+            "2fnua5tdw4.skadnetwork",
+            "ydx93a7ass.skadnetwork"
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
         }
       ]
     ],
