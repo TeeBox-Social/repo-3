@@ -12,7 +12,7 @@ from helpers import (
     now_iso,
     validate_b64_image,
 )
-from models import CommentIn, RoundIn
+from models import CommentIn, CommentUpdate, RoundIn, RoundUpdate
 from security import get_current_user
 
 router = APIRouter()
@@ -24,11 +24,23 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
     photos = (data.photos or [])[:MAX_PHOTOS_PER_ROUND]
     for p in photos:
         validate_b64_image(p, MAX_PHOTO_B64_LEN, "Photo")
+    post_type = data.post_type or "round"
+    # Server-side validation of the discriminator invariants
+    if post_type == "round":
+        if data.total_score is None:
+            raise HTTPException(status_code=422, detail="Score is required for a round post")
+        if not (data.course_name or "").strip():
+            raise HTTPException(status_code=422, detail="Course is required for a round post")
+    if post_type in ("text", "lfg"):
+        # Body must contain SOMETHING so we don't feed empty posts.
+        if not (data.notes or "").strip() and not photos:
+            raise HTTPException(status_code=422, detail="Post cannot be empty")
     round_id = str(uuid.uuid4())
     doc = {
         "id": round_id,
         "user_id": user["id"],
-        "course_name": data.course_name.strip(),
+        "post_type": post_type,
+        "course_name": (data.course_name or "").strip(),
         "date": data.date or now_iso(),
         "total_score": data.total_score,
         "par": data.par or 72,
@@ -41,20 +53,29 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         "weather": data.weather,
         "hole_scores": data.hole_scores or [],
         "hole_pars": data.hole_pars or [],
+        "meetup_date": data.meetup_date if post_type == "lfg" else None,
+        "looking_for_count": data.looking_for_count if post_type == "lfg" else None,
         "created_at": now_iso(),
     }
-    # Diff achievements before/after so we can pin newly-earned badges to the round.
-    prior_rounds = [r async for r in rounds_col.find({"user_id": user["id"]}, {"_id": 0})]
-    before_keys = {d["key"] for d in compute_achievement_defs(prior_rounds) if d["earned"]}
-    after_defs = compute_achievement_defs(prior_rounds + [doc])
-    new_achs = [
-        {"key": d["key"], "title": d["title"], "desc": d["desc"], "icon": d["icon"]}
-        for d in after_defs
-        if d["earned"] and d["key"] not in before_keys
-    ]
-    doc["new_achievements"] = new_achs
+    # Only diff achievements for actual round posts.
+    if post_type == "round":
+        prior_rounds = [
+            r async for r in rounds_col.find(
+                {"user_id": user["id"], "post_type": {"$in": ["round", None]}}, {"_id": 0},
+            )
+        ]
+        before_keys = {d["key"] for d in compute_achievement_defs(prior_rounds) if d["earned"]}
+        after_defs = compute_achievement_defs(prior_rounds + [doc])
+        new_achs = [
+            {"key": d["key"], "title": d["title"], "desc": d["desc"], "icon": d["icon"]}
+            for d in after_defs
+            if d["earned"] and d["key"] not in before_keys
+        ]
+        doc["new_achievements"] = new_achs
+    else:
+        doc["new_achievements"] = []
     await rounds_col.insert_one(doc)
-    for ach in new_achs:
+    for ach in doc.get("new_achievements", []):
         await emit_notification(
             user_id=user["id"],
             pref_key="achievement_unlocked",
@@ -68,6 +89,26 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
             },
         )
     return await enrich_round(doc, user["id"])
+
+
+@router.patch("/rounds/{round_id}")
+async def update_round(round_id: str, data: RoundUpdate, user=Depends(get_current_user)):
+    r = await rounds_col.find_one({"id": round_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Round not found")
+    if r["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    updates = data.dict(exclude_unset=True)
+    if "photos" in updates and updates["photos"] is not None:
+        updates["photos"] = (updates["photos"] or [])[:MAX_PHOTOS_PER_ROUND]
+        for p in updates["photos"]:
+            validate_b64_image(p, MAX_PHOTO_B64_LEN, "Photo")
+    if "course_name" in updates and updates["course_name"] is not None:
+        updates["course_name"] = str(updates["course_name"]).strip()
+    updates["edited_at"] = now_iso()
+    await rounds_col.update_one({"id": round_id}, {"$set": updates})
+    fresh = await rounds_col.find_one({"id": round_id}, {"_id": 0})
+    return await enrich_round(fresh, user["id"])
 
 
 @router.get("/feed")
@@ -217,6 +258,50 @@ async def add_comment(round_id: str, data: CommentIn, user=Depends(get_current_u
         "like_count": 0,
         "liked_by_me": False,
     }
+
+
+@router.patch("/rounds/{round_id}/comments/{comment_id}")
+async def update_comment(
+    round_id: str,
+    comment_id: str,
+    data: CommentUpdate,
+    user=Depends(get_current_user),
+):
+    c = await comments_col.find_one({"id": comment_id, "round_id": round_id})
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if c["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    updates: dict = {
+        "text": data.text.strip(),
+        "edited_at": now_iso(),
+    }
+    if data.mentions is not None:
+        updates["mentions"] = data.mentions
+    await comments_col.update_one({"id": comment_id}, {"$set": updates})
+    fresh = await comments_col.find_one({"id": comment_id}, {"_id": 0})
+    liked_by = fresh.get("liked_by") or []
+    return {
+        **fresh,
+        "author": {
+            "id": user["id"],
+            "display_name": user["display_name"],
+            "avatar": user.get("avatar"),
+        },
+        "like_count": len(liked_by),
+        "liked_by_me": user["id"] in liked_by,
+    }
+
+
+@router.delete("/rounds/{round_id}/comments/{comment_id}")
+async def delete_comment(round_id: str, comment_id: str, user=Depends(get_current_user)):
+    c = await comments_col.find_one({"id": comment_id, "round_id": round_id})
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if c["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await comments_col.delete_one({"id": comment_id})
+    return {"ok": True}
 
 
 @router.post("/rounds/{round_id}/comments/{comment_id}/like")

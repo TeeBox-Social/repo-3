@@ -188,12 +188,23 @@ export const api = {
   feed: (scope: 'followers' | 'all' = 'followers') =>
     request<any[]>(`/feed?scope=${scope}`),
   createRound: (payload: any) => request<any>('/rounds', { method: 'POST', body: JSON.stringify(payload) }),
+  updateRound: (id: string, payload: any) =>
+    request<any>(`/rounds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   getRound: (id: string) => request<any>(`/rounds/${id}`),
   deleteRound: (id: string) => request<any>(`/rounds/${id}`, { method: 'DELETE' }),
   toggleLike: (id: string) => request<{ liked: boolean; like_count: number }>(`/rounds/${id}/like`, { method: 'POST' }),
   getComments: (id: string) => request<any[]>(`/rounds/${id}/comments`),
   addComment: (id: string, text: string, mentions: string[] = []) =>
     request<any>(`/rounds/${id}/comments`, { method: 'POST', body: JSON.stringify({ text, mentions }) }),
+  updateComment: (roundId: string, commentId: string, text: string, mentions: string[] = []) =>
+    request<any>(`/rounds/${roundId}/comments/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text, mentions }),
+    }),
+  deleteComment: (roundId: string, commentId: string) =>
+    request<{ ok: boolean }>(`/rounds/${roundId}/comments/${commentId}`, { method: 'DELETE' }),
+  getUserCoursesPlayed: (userId: string) =>
+    request<any[]>(`/users/${userId}/courses-played`),
   toggleCommentLike: (roundId: string, commentId: string) =>
     request<{ liked: boolean; like_count: number }>(
       `/rounds/${roundId}/comments/${commentId}/like`,

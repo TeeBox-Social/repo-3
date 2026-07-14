@@ -180,7 +180,12 @@ export default function Profile() {
           label="Avg"
           value={profile.avg_score != null ? String(profile.avg_score) : '—'}
         />
-        <StatCell label="Courses" value={String(profile.courses_played || 0)} />
+        <StatCell
+          label="Courses"
+          value={String(profile.courses_played || 0)}
+          onPress={() => user && router.push(`/user/${user.id}/courses-played` as any)}
+          testID="profile-stat-courses"
+        />
         <StatCell
           label="Friends"
           value={String(profile.friends_count || 0)}

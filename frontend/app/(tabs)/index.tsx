@@ -156,7 +156,11 @@ export default function Feed() {
             {/* Ad slot: after every 5th real post so ads are visible only once
                 the user has seen a few genuine rounds first. */}
             {index > 0 && index % 5 === 0 ? <FeedNativeAd /> : null}
-            <RoundCard round={item} onLike={() => onLike(item.id)} />
+            <RoundCard
+              round={item}
+              onLike={() => onLike(item.id)}
+              onDeleted={(id) => setRounds((prev) => prev.filter((r) => r.id !== id))}
+            />
           </>
         )}
         ListHeaderComponent={<VerifyBanner />}

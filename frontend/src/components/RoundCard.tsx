@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,8 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { MentionText } from '@/src/components/MentionText';
+import { api } from '@/src/api';
+import { useAuth } from '@/src/auth-context';
 
 type Achievement = {
   key: string;
@@ -18,6 +20,7 @@ type Achievement = {
 type Props = {
   round: any;
   onLike: () => void;
+  onDeleted?: (roundId: string) => void;
 };
 
 function iconFor(key?: string): any {
@@ -41,10 +44,15 @@ function iconFor(key?: string): any {
   }
 }
 
-export function RoundCard({ round, onLike }: Props) {
+export function RoundCard({ round, onLike, onDeleted }: Props) {
   const router = useRouter();
+  const { user } = useAuth();
+  const postType: 'round' | 'text' | 'lfg' = round.post_type || 'round';
+  const isRound = postType === 'round';
+  const isLfg = postType === 'lfg';
+  const isOwn = !!(user && round.user_id === user.id);
   const hasPhoto = round.photos && round.photos.length > 0;
-  const scoreDiff = round.total_score - (round.par || 72);
+  const scoreDiff = isRound ? round.total_score - (round.par || 72) : 0;
   const scoreLabel = scoreDiff === 0 ? 'E' : scoreDiff > 0 ? `+${scoreDiff}` : `${scoreDiff}`;
   const author = round.author || {};
   const initials = (author.display_name || 'G')
@@ -68,6 +76,37 @@ export function RoundCard({ round, onLike }: Props) {
     ? round.new_achievements
     : [];
 
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete this post?',
+      'This will remove it from the feed for everyone. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteRound(round.id);
+              onDeleted?.(round.id);
+            } catch (e: any) {
+              Alert.alert('Failed to delete', e?.message || 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const openMenu = () => {
+    if (!isOwn) return;
+    Haptics.selectionAsync().catch(() => {});
+    Alert.alert('Post options', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: confirmDelete },
+    ]);
+  };
+
   return (
     <Pressable testID={`round-card-${round.id}`} style={styles.card} onPress={openPost}>
       {/* Header */}
@@ -87,10 +126,33 @@ export function RoundCard({ round, onLike }: Props) {
           <Text style={styles.author}>{author.display_name || 'Golfer'}</Text>
           <Text style={styles.sub}>{timeAgo(round.created_at)}</Text>
         </View>
-        <View style={styles.scorePill}>
-          <Text style={styles.scoreNum}>{round.total_score}</Text>
-          <Text style={styles.scoreDiff}>{scoreLabel}</Text>
-        </View>
+        {isRound ? (
+          <View style={styles.scorePill}>
+            <Text style={styles.scoreNum}>{round.total_score}</Text>
+            <Text style={styles.scoreDiff}>{scoreLabel}</Text>
+          </View>
+        ) : (
+          <View style={[styles.typePill, isLfg && styles.typePillLfg]}>
+            <Ionicons
+              name={isLfg ? 'people' : 'chatbubble-ellipses'}
+              size={12}
+              color={isLfg ? '#7A4E00' : colors.onBrandTertiary}
+            />
+            <Text style={[styles.typePillText, isLfg && { color: '#7A4E00' }]}>
+              {isLfg ? 'LFG' : 'Post'}
+            </Text>
+          </View>
+        )}
+        {isOwn ? (
+          <Pressable
+            testID={`round-card-menu-${round.id}`}
+            onPress={openMenu}
+            hitSlop={10}
+            style={styles.menuBtn}
+          >
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.muted} />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Photo hero (only when a photo exists) */}
@@ -105,24 +167,30 @@ export function RoundCard({ round, onLike }: Props) {
       ) : null}
 
       {/* Course info block (replaces the score/par/holes box) */}
-      <Pressable
-        testID={`round-card-course-${round.id}`}
-        onPress={openCourse}
-        style={styles.courseBlock}
-      >
-        <View style={styles.courseIcon}>
-          <Ionicons name="golf-outline" size={20} color={colors.brandPrimary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.courseName} numberOfLines={1}>
-            {round.course_name}
-          </Text>
-          <Text style={styles.courseMeta} numberOfLines={1}>
-            {round.holes_played} holes · Par {round.par}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-      </Pressable>
+      {postType !== 'text' && round.course_name ? (
+        <Pressable
+          testID={`round-card-course-${round.id}`}
+          onPress={openCourse}
+          style={styles.courseBlock}
+        >
+          <View style={styles.courseIcon}>
+            <Ionicons name="golf-outline" size={20} color={colors.brandPrimary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.courseName} numberOfLines={1}>
+              {round.course_name}
+            </Text>
+            <Text style={styles.courseMeta} numberOfLines={1}>
+              {isLfg
+                ? [round.meetup_date, round.looking_for_count ? `Need ${round.looking_for_count}` : null]
+                    .filter(Boolean)
+                    .join(' · ') || 'Looking for group'
+                : `${round.holes_played} holes · Par ${round.par}`}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+        </Pressable>
+      ) : null}
 
       {/* Newly unlocked achievements */}
       {newAchievements.length > 0 ? (
@@ -226,6 +294,24 @@ const styles = StyleSheet.create({
   },
   scoreNum: { color: colors.onSurfaceInverse, fontSize: 18, fontWeight: '800', lineHeight: 20 },
   scoreDiff: { color: '#BBE9C9', fontSize: 11, fontWeight: '700', marginTop: -2 },
+  typePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  typePillLfg: { backgroundColor: '#FFF4D6', borderWidth: 1, borderColor: '#F0DBA0' },
+  typePillText: { fontSize: 11, fontWeight: '800', color: colors.onBrandTertiary, letterSpacing: 0.4 },
+  menuBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
   hero: {
     height: 180,
     borderRadius: radius.md,

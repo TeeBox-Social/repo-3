@@ -115,6 +115,41 @@ async def get_user_rounds(user_id: str, user=Depends(get_current_user)):
     return [await enrich_round(r, user["id"]) async for r in cursor]
 
 
+@router.get("/users/{user_id}/courses-played")
+async def get_courses_played(user_id: str, user=Depends(get_current_user)):
+    """List every distinct course this user has posted a round at, plus stats.
+    Ordered by play count desc so favourites bubble to the top."""
+    _ = user  # requires auth but no per-viewer data
+    out = []
+    async for c in rounds_col.aggregate([
+        {"$match": {"user_id": user_id, "post_type": {"$in": ["round", None]}}},
+        {"$group": {
+            "_id": "$course_name",
+            "play_count": {"$sum": 1},
+            "best_score": {"$min": "$total_score"},
+            "avg_score": {"$avg": "$total_score"},
+            "last_played": {"$max": "$created_at"},
+        }},
+        {"$match": {"_id": {"$ne": ""}}},
+        {"$sort": {"play_count": -1, "_id": 1}},
+    ]):
+        name = c["_id"]
+        if not name:
+            continue
+        course = await courses_col.find_one({"name": name}, {"_id": 0})
+        out.append({
+            "course_name": name,
+            "play_count": c["play_count"],
+            "best_score": c.get("best_score"),
+            "avg_score": round(c["avg_score"], 1) if c.get("avg_score") else None,
+            "last_played": c.get("last_played"),
+            "city": course.get("city") if course else None,
+            "region": course.get("region") if course else None,
+            "country": course.get("country") if course else None,
+        })
+    return out
+
+
 @router.get("/users/{user_id}/friends")
 async def get_user_friends(user_id: str, user=Depends(get_current_user)):
     following_ids = {f["target_id"] async for f in follows_col.find({"user_id": user_id}, {"_id": 0, "target_id": 1})}

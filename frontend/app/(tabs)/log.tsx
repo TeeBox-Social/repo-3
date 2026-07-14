@@ -38,7 +38,9 @@ export default function LogRound() {
   }>();
 
   const [courseName, setCourseName] = useState('');
-  const [courseSelected, setCourseSelected] = useState(false);
+  const [postType, setPostType] = useState<'round' | 'text' | 'lfg'>('round');
+  const [lookingFor, setLookingFor] = useState('');
+  const [meetupDate, setMeetupDate] = useState('');  const [courseSelected, setCourseSelected] = useState(false);
   const [totalScore, setTotalScore] = useState('');
   const [par, setPar] = useState('72');
   const [holes, setHoles] = useState('18');
@@ -114,38 +116,54 @@ export default function LogRound() {
 
   const onSubmit = async () => {
     setErr(null);
-    if (!courseName.trim()) {
-      setErr('Course name is required');
-      return;
-    }
-    if (!courseSelected) {
-      setErr('Please pick a course from the suggestions, or tap "Add as a new course" if it\'s missing.');
-      return;
-    }
-    const score = Number(totalScore);
-    if (!Number.isFinite(score) || score <= 0) {
-      setErr('Enter a valid score');
-      return;
+    if (postType === 'round') {
+      if (!courseName.trim()) {
+        setErr('Course name is required');
+        return;
+      }
+      if (!courseSelected) {
+        setErr('Please pick a course from the suggestions, or tap "Add as a new course" if it\'s missing.');
+        return;
+      }
+      const score = Number(totalScore);
+      if (!Number.isFinite(score) || score <= 0) {
+        setErr('Enter a valid score');
+        return;
+      }
+    } else {
+      if (!notes.trim() && photos.length === 0) {
+        setErr(postType === 'lfg' ? 'Tell others what you\u2019re looking for.' : 'Write something to share.');
+        return;
+      }
     }
     setLoading(true);
     try {
-      await api.createRound({
-        course_name: courseName.trim(),
-        total_score: score,
-        par: Number(par) || (holes === '9' ? 36 : 72),
-        holes_played: Number(holes) || 18,
-        fairways_hit: fairways ? Number(fairways) : null,
-        greens_in_regulation: gir ? Number(gir) : null,
-        putts: putts ? Number(putts) : null,
+      const basePayload: any = {
+        post_type: postType,
         notes: notes.trim(),
         photos,
-        hole_scores: [],
-      });
+      };
+      if (postType === 'round') {
+        basePayload.course_name = courseName.trim();
+        basePayload.total_score = Number(totalScore);
+        basePayload.par = Number(par) || (holes === '9' ? 36 : 72);
+        basePayload.holes_played = Number(holes) || 18;
+        basePayload.fairways_hit = fairways ? Number(fairways) : null;
+        basePayload.greens_in_regulation = gir ? Number(gir) : null;
+        basePayload.putts = putts ? Number(putts) : null;
+        basePayload.hole_scores = [];
+      } else if (postType === 'lfg') {
+        basePayload.course_name = courseName.trim();
+        if (meetupDate.trim()) basePayload.meetup_date = meetupDate.trim();
+        const lf = Number(lookingFor);
+        if (Number.isFinite(lf) && lf > 0) basePayload.looking_for_count = lf;
+      }
+      await api.createRound(basePayload);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       resetForm();
       router.replace('/(tabs)');
     } catch (e: any) {
-      setErr(e?.message || 'Failed to save round');
+      setErr(e?.message || 'Failed to save post');
     } finally {
       setLoading(false);
     }
@@ -155,8 +173,39 @@ export default function LogRound() {
     <View style={styles.container} testID="log-round-screen">
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
-          <Text style={styles.title}>Log a round</Text>
-          <Text style={styles.subtitle}>Give the group chat something to talk about.</Text>
+          <Text style={styles.title}>
+            {postType === 'round' ? 'Log a round' : postType === 'lfg' ? 'Looking for group' : 'New post'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {postType === 'round'
+              ? 'Give the group chat something to talk about.'
+              : postType === 'lfg'
+                ? 'Tell your circle when and where you\u2019re playing.'
+                : 'Share a thought, tip, or story with your circle.'}
+          </Text>
+          <View style={styles.segRow} testID="log-type-segment">
+            {(['round', 'text', 'lfg'] as const).map((t) => (
+              <Pressable
+                key={t}
+                testID={`log-type-${t}`}
+                onPress={() => {
+                  setPostType(t);
+                  setErr(null);
+                }}
+                style={[styles.segBtn, postType === t && styles.segBtnActive]}
+                hitSlop={6}
+              >
+                <Ionicons
+                  name={t === 'round' ? 'golf' : t === 'text' ? 'chatbubble-ellipses' : 'people'}
+                  size={13}
+                  color={postType === t ? '#fff' : colors.onSurface}
+                />
+                <Text style={[styles.segText, postType === t && styles.segTextActive]}>
+                  {t === 'round' ? 'Round' : t === 'text' ? 'Post' : 'LFG'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </SafeAreaView>
 
@@ -186,21 +235,25 @@ export default function LogRound() {
             </View>
           ) : null}
 
-          <CourseAutocomplete
-            testID="log-course"
-            value={courseName}
-            selected={courseSelected}
-            onChangeText={(t) => {
-              setCourseName(t);
-              setCourseSelected(false);
-            }}
-            onSelect={(c) => {
-              setCourseName(c.name);
-              setCourseSelected(!!c.name);
-              if (c.par && (!par || par === '72')) setPar(String(c.par));
-            }}
-          />
+          {postType !== 'text' ? (
+            <CourseAutocomplete
+              testID="log-course"
+              value={courseName}
+              selected={courseSelected}
+              onChangeText={(t) => {
+                setCourseName(t);
+                setCourseSelected(postType === 'lfg' ? true : false);
+              }}
+              onSelect={(c) => {
+                setCourseName(c.name);
+                setCourseSelected(!!c.name);
+                if (c.par && (!par || par === '72')) setPar(String(c.par));
+              }}
+            />
+          ) : null}
 
+          {postType === 'round' ? (
+          <>
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
               <Text style={styles.dropdownLabel}>Holes</Text>
@@ -277,9 +330,33 @@ export default function LogRound() {
               containerStyle={{ flex: 1 }}
             />
           </View>
+          </>
+          ) : postType === 'lfg' ? (
+            <View style={styles.row}>
+              <TBInput
+                label="Tee time / date"
+                testID="log-meetup-date"
+                value={meetupDate}
+                onChangeText={setMeetupDate}
+                placeholder="Sat 8:30 AM"
+                containerStyle={{ flex: 2 }}
+              />
+              <TBInput
+                label="Need"
+                testID="log-looking-for"
+                value={lookingFor}
+                onChangeText={setLookingFor}
+                keyboardType="number-pad"
+                placeholder="2"
+                containerStyle={{ flex: 1 }}
+              />
+            </View>
+          ) : null}
 
           <View style={{ gap: 4 }}>
-            <Text style={styles.dropdownLabel}>Notes</Text>
+            <Text style={styles.dropdownLabel}>
+              {postType === 'lfg' ? 'Details' : postType === 'text' ? 'What\u2019s on your mind?' : 'Notes'}
+            </Text>
             <MentionInput
               testID="log-notes"
               value={notes}
@@ -347,6 +424,26 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: { fontSize: 26, fontWeight: '800', color: colors.onSurface },
   subtitle: { fontSize: 14, color: colors.muted, marginTop: 2 },
+  segRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 12,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceTertiary,
+    alignSelf: 'flex-start',
+  },
+  segBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  segBtnActive: { backgroundColor: colors.brandPrimary },
+  segText: { fontSize: 12, fontWeight: '800', color: colors.onSurface },
+  segTextActive: { color: '#fff' },
   form: { padding: spacing.xl, gap: spacing.md, paddingBottom: 140 },
   row: { flexDirection: 'row', gap: spacing.sm },
   sectionLabel: {

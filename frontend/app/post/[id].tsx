@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  TextInput,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -267,10 +269,25 @@ export default function PostDetail() {
                     key={c.id}
                     c={c}
                     roundId={String(id)}
+                    currentUserId={user?.id}
                     onLikeChange={(next) =>
                       setComments((prev) =>
                         prev
                           ? prev.map((x) => (x.id === next.id ? { ...x, ...next } : x))
+                          : prev,
+                      )
+                    }
+                    onDeleted={(cid) =>
+                      setComments((prev) => (prev ? prev.filter((x) => x.id !== cid) : prev))
+                    }
+                    onEdited={(cid, text) =>
+                      setComments((prev) =>
+                        prev
+                          ? prev.map((x) =>
+                              x.id === cid
+                                ? { ...x, text, edited_at: new Date().toISOString() }
+                                : x,
+                            )
                           : prev,
                       )
                     }
@@ -323,11 +340,17 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function CommentRow({
   c,
   roundId,
+  currentUserId,
   onLikeChange,
+  onDeleted,
+  onEdited,
 }: {
   c: any;
   roundId: string;
+  currentUserId?: string;
   onLikeChange: (next: { id: string; liked_by_me: boolean; like_count: number }) => void;
+  onDeleted: (id: string) => void;
+  onEdited: (id: string, text: string) => void;
 }) {
   const initials = (c.author?.display_name || 'G')
     .split(' ')
@@ -335,10 +358,13 @@ function CommentRow({
     .slice(0, 2)
     .join('')
     .toUpperCase();
+  const isOwn = !!(currentUserId && c.user_id === currentUserId);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(c.text || ''));
+  const [saving, setSaving] = useState(false);
 
   const onToggle = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    // Optimistic
     const nowLiked = !c.liked_by_me;
     const nextCount = Math.max(0, (c.like_count || 0) + (nowLiked ? 1 : -1));
     onLikeChange({ id: c.id, liked_by_me: nowLiked, like_count: nextCount });
@@ -346,12 +372,62 @@ function CommentRow({
       const res = await api.toggleCommentLike(roundId, c.id);
       onLikeChange({ id: c.id, liked_by_me: res.liked, like_count: res.like_count });
     } catch {
-      // Revert
       onLikeChange({
         id: c.id,
         liked_by_me: !nowLiked,
         like_count: Math.max(0, nextCount + (nowLiked ? -1 : 1)),
       });
+    }
+  };
+
+  const openMenu = () => {
+    if (!isOwn) return;
+    Haptics.selectionAsync().catch(() => {});
+    Alert.alert('Comment options', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Edit',
+        onPress: () => {
+          setDraft(String(c.text || ''));
+          setEditing(true);
+        },
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Delete comment?', 'This cannot be undone.', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await api.deleteComment(roundId, c.id);
+                  onDeleted(c.id);
+                } catch (e: any) {
+                  Alert.alert('Failed to delete', e?.message || 'Please try again.');
+                }
+              },
+            },
+          ]);
+        },
+      },
+    ]);
+  };
+
+  const saveEdit = async () => {
+    const next = draft.trim();
+    if (!next) return;
+    setSaving(true);
+    try {
+      await api.updateComment(roundId, c.id, next, c.mentions || []);
+      onEdited(c.id, next);
+      setEditing(false);
+    } catch (e: any) {
+      Alert.alert('Failed to save', e?.message || 'Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -365,12 +441,48 @@ function CommentRow({
         )}
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.commentAuthor}>{c.author?.display_name || 'Golfer'}</Text>
-        <MentionText
-          text={String(c.text || '')}
-          style={styles.commentText}
-          mentionStyle={styles.mention}
-        />
+        <Text style={styles.commentAuthor}>
+          {c.author?.display_name || 'Golfer'}
+          {c.edited_at ? <Text style={styles.editedFlag}>  · edited</Text> : null}
+        </Text>
+        {editing ? (
+          <>
+            <TextInput
+              testID={`comment-edit-input-${c.id}`}
+              value={draft}
+              onChangeText={setDraft}
+              autoFocus
+              multiline
+              style={styles.editInput}
+              placeholderTextColor={colors.muted}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <Pressable
+                testID={`comment-edit-cancel-${c.id}`}
+                onPress={() => setEditing(false)}
+                hitSlop={6}
+                style={styles.editBtnGhost}
+              >
+                <Text style={styles.editBtnGhostText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                testID={`comment-edit-save-${c.id}`}
+                onPress={saveEdit}
+                hitSlop={6}
+                disabled={saving}
+                style={styles.editBtnPrimary}
+              >
+                <Text style={styles.editBtnPrimaryText}>{saving ? '...' : 'Save'}</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <MentionText
+            text={String(c.text || '')}
+            style={styles.commentText}
+            mentionStyle={styles.mention}
+          />
+        )}
       </View>
       <Pressable
         testID={`comment-like-${c.id}`}
@@ -387,6 +499,16 @@ function CommentRow({
           <Text style={styles.commentLikeCount}>{c.like_count}</Text>
         ) : null}
       </Pressable>
+      {isOwn && !editing ? (
+        <Pressable
+          testID={`comment-menu-${c.id}`}
+          onPress={openMenu}
+          hitSlop={10}
+          style={styles.commentLikeBtn}
+        >
+          <Ionicons name="ellipsis-horizontal" size={16} color={colors.muted} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -495,6 +617,30 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   commentLikeCount: { fontSize: 12, color: colors.muted, fontWeight: '700' },
+  editedFlag: { fontSize: 10, color: colors.muted, fontWeight: '600' },
+  editInput: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    padding: 10,
+    marginTop: 4,
+    fontSize: 14,
+    color: colors.onSurface,
+    minHeight: 60,
+  },
+  editBtnGhost: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+  },
+  editBtnGhostText: { fontSize: 12, color: colors.muted, fontWeight: '700' },
+  editBtnPrimary: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+  },
+  editBtnPrimaryText: { fontSize: 12, color: '#fff', fontWeight: '800' },
   commentAvatar: {
     width: 36,
     height: 36,

@@ -1,0 +1,53 @@
+{
+  "summary": "Iter-26 (post_type discriminator, edit/delete for own rounds+comments, courses-played endpoint & screen, log-tab segmented control). Backend: 17/18 pytest pass. One BUG found — GET /api/users/{id}.courses_played still aggregates ALL post_types (unique course_name groups) and does NOT filter to post_type in ['round', null]. In the test, adding 1 text post + 1 LFG post to a fresh user bumped courses_played from 0 to 2 (the LFG's course_name and the text's empty course_name both counted). This contradicts the review-request requirement 'GET /api/users/{id} still returns correct courses_played count (unique course names from round-type rounds only).' — the GET /api/users/{id}/courses-played endpoint itself does filter correctly. Frontend: Log tab renders the segmented control (testID='log-type-segment') with three options (round/text/lfg) and correctly gates fields — Round shows score/par/fairways/gir/putts, Text hides course/score, LFG shows course + meetup-date + looking-for. profile-stat-courses navigates to /user/{userId}/courses-played and the screen renders (empty-state and populated). Own RoundCards render a 3-dot menu (testID='round-card-menu-{id}') and tapping it does not crash the app.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/users/{user_id}",
+        "issue": "`courses_played` field aggregates every rounds_col document regardless of post_type. Text posts (empty course_name) and LFG posts (LFG's course_name) both increment the unique-course count. Fix: add {\"post_type\": {\"$in\": [\"round\", None]}} and {\"course_name\": {\"$ne\": \"\"}} to the $match stage at routers/users.py lines 72–77, mirroring the aggregation in get_courses_played (users.py :125). Repro: as a user with 0 rounds, POST a text-only post and an LFG post; GET /api/users/{id} then shows courses_played=2 instead of 0.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "app/(tabs)/log.tsx",
+        "issues": [
+          "Line 43 has two useState calls on the same line without a newline separator: `const [meetupDate, setMeetupDate] = useState(''); const [courseSelected, setCourseSelected] = useState(false);` — works but is a lint/formatting nit worth fixing for readability."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_post_types_edit.py",
+    "/app/test_reports/pytest/iter26_results.xml"
+  ],
+  "action_items": [
+    "Fix GET /api/users/{user_id} — filter the courses_played aggregation to `post_type: {$in: ['round', None]}` AND drop empty course_name buckets, so text/LFG posts don't inflate the profile-stat-courses number. See routers/users.py :71–77.",
+    "Cosmetic: split the double `useState` on log.tsx :43 onto its own line."
+  ],
+  "critical_code_review_comments": [
+    "routers/rounds.py :29–37 — nice discriminator validation: 'round' requires course + total_score, 'text'/'lfg' require notes-or-photos. Achievement diff is skipped for non-round posts (line 61) and doc['new_achievements']=[] is still returned — matches the frontend expectation.",
+    "routers/rounds.py :56–57 — meetup_date and looking_for_count are force-nulled for non-lfg post_type, so PATCHing a round into 'text' won't leak stale LFG fields; but note update_round (:94–111) does NOT enforce this invariant when post_type is patched — a future 'change post_type' flow may leak meetup_date. Consider gating on post_type in the update path if that ever becomes user-facing.",
+    "routers/rounds.py :102–108 — PATCH sets edited_at unconditionally; even a PATCH with empty body will set edited_at. Consider only setting it when the doc actually changed, otherwise every 'View' that touches PATCH will mark the post as edited. (Not a bug today because the frontend only PATCHes on user edits.)",
+    "routers/users.py :118–150 — get_courses_played correctly filters {'post_type': {'$in': ['round', None]}} and drops empty course_name. This is the pattern that get_user (line 71) should also adopt.",
+    "app/(tabs)/log.tsx :141–160 — payload construction is clean; server-side is the source of truth for validation. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_post_types_edit.py (new — 18 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "94.4% (17/18) — the failing test asserts GET /api/users/{id} excludes non-round posts from courses_played; the endpoint does not filter yet.",
+    "frontend": "100% for the flows verified (log-type-segment renders + gates fields for all 3 types, profile-stat-courses → courses-played navigation, own-round 3-dot menu renders and taps without crash)."
+  },
+  "seed_data_creation": "All test data is prefixed TEST_iter26_* and cleaned up by the tests. One brand-new user (TEST_iter26_empty_*@teebox.demo) is created per fresh-user test and left in the users collection — safe because it has 0 rounds/follows.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The single backend failure is deterministic; re-run `pytest backend/tests/test_iter26_post_types_edit.py::TestCoursesPlayed::test_user_courses_played_count_excludes_non_round_posts -v` after the users.py aggregation is fixed. Frontend Alert dialogs from RoundCard menu / comment menu can't be interacted with in web preview (React Native Alert.alert on web is a native prompt-style overlay that Playwright's dialog event does capture for `window.alert` but NOT for react-native-web's custom Alert — hence we only verified the trigger button renders and tapping does not throw). Log tab's segmented-control gating is confirmed correct on web; the round/text/lfg branches show/hide the expected fields.",
+  "rca_of_issue": "Root cause of the courses_played inflation: routers/users.py :71–77 predates the post_type discriminator. The aggregation groups on $course_name across ALL rounds. LFG posts store a real course_name (LFG needs a course), so they're counted as a played course; text posts store course_name='', so an empty-string bucket is also counted (unless masked). The sibling endpoint /users/{id}/courses-played already filters {'post_type': {'$in': ['round', None]}} and drops empty names — apply the same $match to the get_user aggregation."
+}
