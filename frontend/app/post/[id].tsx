@@ -112,7 +112,10 @@ export default function PostDetail() {
   }
 
   const hasPhoto = round.photos && round.photos.length > 0;
-  const scoreDiff = round.total_score - (round.par || 72);
+  const postType: 'round' | 'text' | 'lfg' = round.post_type || 'round';
+  const isRound = postType === 'round';
+  const isLfg = postType === 'lfg';
+  const scoreDiff = isRound ? round.total_score - (round.par || 72) : 0;
   const scoreLabel = scoreDiff === 0 ? 'Even' : scoreDiff > 0 ? `+${scoreDiff}` : `${scoreDiff}`;
   const author = round.author || {};
   const initials = (author.display_name || 'G')
@@ -166,7 +169,9 @@ export default function PostDetail() {
               ) : null}
             </SafeAreaView>
             <View style={styles.heroCopy}>
-              <Text style={styles.heroCourse}>{round.course_name}</Text>
+              <Text style={styles.heroCourse}>
+                {round.course_name || (isLfg ? 'Looking for Group' : 'Post')}
+              </Text>
               <Text style={styles.heroDate}>
                 {new Date(round.date || round.created_at).toLocaleDateString(undefined, {
                   month: 'long',
@@ -199,29 +204,50 @@ export default function PostDetail() {
               <Ionicons name="chevron-forward" size={18} color={colors.muted} />
             </Pressable>
 
-            <View style={styles.scoreCard}>
-              <View style={styles.scoreCell}>
-                <Text style={styles.scoreValBig}>{round.total_score}</Text>
-                <Text style={styles.scoreLbl}>Score</Text>
+            {isRound ? (
+              <View style={styles.scoreCard}>
+                <View style={styles.scoreCell}>
+                  <Text style={styles.scoreValBig}>{round.total_score}</Text>
+                  <Text style={styles.scoreLbl}>Score</Text>
+                </View>
+                <View style={styles.scoreDivider} />
+                <View style={styles.scoreCell}>
+                  <Text style={styles.scoreValBig}>{scoreLabel}</Text>
+                  <Text style={styles.scoreLbl}>vs Par</Text>
+                </View>
+                <View style={styles.scoreDivider} />
+                <View style={styles.scoreCell}>
+                  <Text style={styles.scoreValBig}>{round.holes_played}</Text>
+                  <Text style={styles.scoreLbl}>Holes</Text>
+                </View>
+                <View style={styles.scoreDivider} />
+                <View style={styles.scoreCell}>
+                  <Text style={styles.scoreValBig}>{round.par}</Text>
+                  <Text style={styles.scoreLbl}>Par</Text>
+                </View>
               </View>
-              <View style={styles.scoreDivider} />
-              <View style={styles.scoreCell}>
-                <Text style={styles.scoreValBig}>{scoreLabel}</Text>
-                <Text style={styles.scoreLbl}>vs Par</Text>
-              </View>
-              <View style={styles.scoreDivider} />
-              <View style={styles.scoreCell}>
-                <Text style={styles.scoreValBig}>{round.holes_played}</Text>
-                <Text style={styles.scoreLbl}>Holes</Text>
-              </View>
-              <View style={styles.scoreDivider} />
-              <View style={styles.scoreCell}>
-                <Text style={styles.scoreValBig}>{round.par}</Text>
-                <Text style={styles.scoreLbl}>Par</Text>
-              </View>
-            </View>
+            ) : null}
 
-            {(round.fairways_hit != null || round.greens_in_regulation != null || round.putts != null) ? (
+            {isLfg ? (
+              <View style={styles.lfgBanner} testID="post-lfg-banner">
+                <View style={styles.lfgIconLg}>
+                  <Ionicons name="people" size={20} color="#7A4E00" />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.lfgTitle}>Looking for Group</Text>
+                  <Text style={styles.lfgSub}>
+                    {[
+                      round.meetup_date,
+                      round.looking_for_count ? `Need ${round.looking_for_count} more` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' \u00b7 ') || 'Reply below if you\u2019re in.'}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            {isRound && (round.fairways_hit != null || round.greens_in_regulation != null || round.putts != null) ? (
               <View style={styles.miniStats}>
                 {round.fairways_hit != null && (
                   <MiniStat label="Fairways" value={String(round.fairways_hit)} />
@@ -233,7 +259,7 @@ export default function PostDetail() {
               </View>
             ) : null}
 
-            {round.hole_scores && round.hole_scores.length === 18 ? (
+            {isRound && round.hole_scores && round.hole_scores.length === 18 ? (
               <View testID="post-hole-grid" style={styles.holeCard}>
                 <Text style={styles.holeCardTitle}>Scorecard</Text>
                 <HoleGrid
@@ -581,6 +607,33 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   miniStats: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  lfgBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#FFF4D6',
+    borderWidth: 1,
+    borderColor: '#F0DBA0',
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadow.soft,
+  },
+  lfgIconLg: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: '#FCE7B6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lfgTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7A4E00',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  lfgSub: { fontSize: 15, fontWeight: '700', color: '#7A4E00', marginTop: 2, lineHeight: 20 },
   miniStatPill: {
     flexDirection: 'row',
     alignItems: 'baseline',

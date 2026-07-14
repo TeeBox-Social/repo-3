@@ -21,6 +21,14 @@ import { FeedNativeAd } from '@/src/components/FeedNativeAd';
 import { useAuth } from '@/src/auth-context';
 import { TBButton } from '@/src/components/TBButton';
 
+type FeedFilter = 'all' | 'round' | 'text' | 'lfg';
+const FILTERS: { key: FeedFilter; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'all', label: 'All', icon: 'sparkles' },
+  { key: 'round', label: 'Rounds', icon: 'golf' },
+  { key: 'text', label: 'Chat', icon: 'chatbubble-ellipses' },
+  { key: 'lfg', label: 'LFG', icon: 'people' },
+];
+
 export default function Feed() {
   const router = useRouter();
   const { user } = useAuth();
@@ -28,6 +36,7 @@ export default function Feed() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const [filter, setFilter] = useState<FeedFilter>('all');
 
   const load = useCallback(async () => {
     setError(null);
@@ -114,6 +123,29 @@ export default function Feed() {
           <Text style={styles.headerCtaText}>My Profile</Text>
         </Pressable>
       </View>
+      <View style={styles.filterRow} testID="feed-filter-row">
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <Pressable
+              key={f.key}
+              testID={`feed-filter-${f.key}`}
+              onPress={() => setFilter(f.key)}
+              hitSlop={4}
+              style={[styles.filterPill, active && styles.filterPillActive]}
+            >
+              <Ionicons
+                name={f.icon}
+                size={12}
+                color={active ? '#fff' : colors.onSurface}
+              />
+              <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
+                {f.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </SafeAreaView>
   );
 
@@ -125,6 +157,11 @@ export default function Feed() {
       </View>
     );
   }
+
+  const visibleRounds =
+    filter === 'all'
+      ? rounds
+      : rounds.filter((r) => (r.post_type || 'round') === filter);
 
   return (
     <View style={styles.container} testID="feed-screen">
@@ -138,7 +175,7 @@ export default function Feed() {
       </View>
 
       <FlatList
-        data={rounds}
+        data={visibleRounds}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -167,9 +204,13 @@ export default function Feed() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Image source={{ uri: IMAGES.emptyFeed }} style={styles.emptyImg} contentFit="cover" />
-            <Text style={styles.emptyTitle}>Your feed is quiet</Text>
+            <Text style={styles.emptyTitle}>
+              {filter === 'all' ? 'Your feed is quiet' : `No ${filterLabel(filter)} posts yet`}
+            </Text>
             <Text style={styles.emptySub}>
-              Follow other golfers from Discover, or log your own round to start the conversation.
+              {filter === 'all'
+                ? 'Follow other golfers from Discover, or log your own round to start the conversation.'
+                : `Try switching filters, or be the first to post ${filterLabel(filter)}.`}
             </Text>
             <TBButton label="Log a round" testID="empty-log-round" onPress={() => router.push('/(tabs)/log')} />
             <Pressable
@@ -194,7 +235,11 @@ export default function Feed() {
   );
 }
 
-const HEADER_H = Platform.OS === 'ios' ? 120 : 110;
+const HEADER_H = Platform.OS === 'ios' ? 168 : 158;
+
+function filterLabel(f: 'round' | 'text' | 'lfg') {
+  return f === 'round' ? 'round' : f === 'text' ? 'chat' : 'LFG';
+}
 
 function VerifyBanner() {
   const { user } = useAuth();
@@ -301,6 +346,34 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
   },
   bellBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterPillActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  filterPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.onSurface,
+    letterSpacing: 0.2,
+  },
+  filterPillTextActive: { color: '#fff' },
   listContent: {
     paddingTop: HEADER_H + spacing.lg,
     paddingHorizontal: spacing.lg,

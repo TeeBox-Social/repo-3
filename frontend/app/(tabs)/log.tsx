@@ -153,7 +153,8 @@ export default function LogRound() {
         basePayload.putts = putts ? Number(putts) : null;
         basePayload.hole_scores = [];
       } else if (postType === 'lfg') {
-        basePayload.course_name = courseName.trim();
+        // LFG posts no longer require a course tag — the feed presents them
+        // as a stand-alone "Looking for Group" call-out.
         if (meetupDate.trim()) basePayload.meetup_date = meetupDate.trim();
         const lf = Number(lookingFor);
         if (Number.isFinite(lf) && lf > 0) basePayload.looking_for_count = lf;
@@ -180,7 +181,7 @@ export default function LogRound() {
             {postType === 'round'
               ? 'Give the group chat something to talk about.'
               : postType === 'lfg'
-                ? 'Tell your circle when and where you\u2019re playing.'
+                ? 'Tell your circle when you\u2019re playing and who you need.'
                 : 'Share a thought, tip, or story with your circle.'}
           </Text>
           <View style={styles.segRow} testID="log-type-segment">
@@ -235,14 +236,14 @@ export default function LogRound() {
             </View>
           ) : null}
 
-          {postType !== 'text' ? (
+          {postType === 'round' ? (
             <CourseAutocomplete
               testID="log-course"
               value={courseName}
               selected={courseSelected}
               onChangeText={(t) => {
                 setCourseName(t);
-                setCourseSelected(postType === 'lfg' ? true : false);
+                setCourseSelected(false);
               }}
               onSelect={(c) => {
                 setCourseName(c.name);
@@ -393,7 +394,15 @@ export default function LogRound() {
           {err ? <Text style={styles.errText}>{err}</Text> : null}
 
           <TBButton
-            label={loading ? 'Saving…' : 'Save round'}
+            label={
+              loading
+                ? 'Saving\u2026'
+                : postType === 'round'
+                  ? 'Save round'
+                  : postType === 'lfg'
+                    ? 'Post LFG'
+                    : 'Post'
+            }
             testID="log-submit"
             loading={loading}
             onPress={onSubmit}

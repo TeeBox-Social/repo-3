@@ -166,8 +166,8 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
         </View>
       ) : null}
 
-      {/* Course info block (replaces the score/par/holes box) */}
-      {postType !== 'text' && round.course_name ? (
+      {/* Course info block for rounds (replaces the score/par/holes box) */}
+      {isRound && round.course_name ? (
         <Pressable
           testID={`round-card-course-${round.id}`}
           onPress={openCourse}
@@ -181,15 +181,31 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
               {round.course_name}
             </Text>
             <Text style={styles.courseMeta} numberOfLines={1}>
-              {isLfg
-                ? [round.meetup_date, round.looking_for_count ? `Need ${round.looking_for_count}` : null]
-                    .filter(Boolean)
-                    .join(' · ') || 'Looking for group'
-                : `${round.holes_played} holes · Par ${round.par}`}
+              {`${round.holes_played} holes \u00b7 Par ${round.par}`}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={colors.muted} />
         </Pressable>
+      ) : null}
+
+      {/* Dedicated Looking-for-Group banner */}
+      {isLfg ? (
+        <View style={styles.lfgBanner} testID={`round-card-lfg-${round.id}`}>
+          <View style={styles.lfgIcon}>
+            <Ionicons name="people" size={18} color="#7A4E00" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.lfgTitle}>Looking for Group</Text>
+            <Text style={styles.lfgSub} numberOfLines={2}>
+              {[
+                round.meetup_date,
+                round.looking_for_count ? `Need ${round.looking_for_count} more` : null,
+              ]
+                .filter(Boolean)
+                .join(' \u00b7 ') || 'Reply below if you\u2019re in.'}
+            </Text>
+          </View>
+        </View>
       ) : null}
 
       {/* Newly unlocked achievements */}
@@ -338,6 +354,33 @@ const styles = StyleSheet.create({
   },
   courseName: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   courseMeta: { fontSize: 12, color: colors.muted, fontWeight: '600', marginTop: 2 },
+  lfgBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#FFF4D6',
+    borderWidth: 1,
+    borderColor: '#F0DBA0',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  lfgIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: '#FCE7B6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lfgTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7A4E00',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  lfgSub: { fontSize: 14, fontWeight: '700', color: '#7A4E00', marginTop: 2, lineHeight: 18 },
   achWrap: { gap: spacing.sm },
   achChip: {
     flexDirection: 'row',
