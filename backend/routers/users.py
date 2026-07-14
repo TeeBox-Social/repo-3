@@ -70,7 +70,11 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
     following_count = await follows_col.count_documents({"user_id": user_id})
     courses_played = 0
     async for _ in rounds_col.aggregate([
-        {"$match": {"user_id": user_id}},
+        {"$match": {
+            "user_id": user_id,
+            "post_type": {"$in": ["round", None]},
+            "course_name": {"$ne": ""},
+        }},
         {"$group": {"_id": "$course_name"}},
         {"$count": "n"},
     ]):
