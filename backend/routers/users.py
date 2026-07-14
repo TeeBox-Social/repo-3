@@ -299,11 +299,43 @@ async def check_wishlist(course_name: str, user=Depends(get_current_user)):
 
 
 @router.get("/discover/users")
-async def discover_users(q: str = "", user=Depends(get_current_user)):
-    query = {}
+async def discover_users(
+    q: str = "",
+    connections_only: bool = False,
+    user=Depends(get_current_user),
+):
+    """Search users by display name.
+
+    When `connections_only=True` (used by the @-mention picker) results are
+    restricted to accounts the current viewer already has a following-graph
+    edge with — either the viewer follows them, or they follow the viewer.
+    This keeps the tag list to the people you actually play/chat with.
+    """
+    query: dict = {}
     safe = safe_query(q)
     if safe:
         query = {"display_name": {"$regex": safe, "$options": "i"}}
+
+    allowed_ids: set[str] | None = None
+    if connections_only:
+        following_ids = {
+            f["target_id"]
+            async for f in follows_col.find(
+                {"user_id": user["id"]}, {"_id": 0, "target_id": 1}
+            )
+        }
+        follower_ids = {
+            f["user_id"]
+            async for f in follows_col.find(
+                {"target_id": user["id"]}, {"_id": 0, "user_id": 1}
+            )
+        }
+        allowed_ids = following_ids | follower_ids
+        # Short-circuit: no follow-graph edges → nothing to suggest.
+        if not allowed_ids:
+            return []
+        query = {**query, "id": {"$in": list(allowed_ids)}}
+
     users = []
     async for u in users_col.find(query, {"_id": 0, "hashed_password": 0, "email": 0}).limit(30):
         if u["id"] == user["id"]:

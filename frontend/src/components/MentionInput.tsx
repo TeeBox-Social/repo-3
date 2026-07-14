@@ -8,6 +8,7 @@ import {
   TextInputProps,
   ActivityIndicator,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { colors, radius, shadow, spacing } from '@/src/theme';
@@ -19,6 +20,15 @@ type Props = TextInputProps & {
   value: string;
   onChangeText: (text: string) => void;
   onMentionsChange?: (ids: string[]) => void;
+  /**
+   * Where the suggestions dropdown should render relative to the input.
+   * - `top` (default): above the input — best when the input sits near the
+   *   bottom of the screen (e.g. the comment bar on a post detail).
+   * - `bottom`: below the input — best when the input sits high in the layout
+   *   with lots of empty space beneath it (e.g. the Notes/Details field on
+   *   the Log screen for Post / LFG modes).
+   */
+  dropdownPlacement?: 'top' | 'bottom';
 };
 
 /** Detects the currently-typed @mention token at cursor position. */
@@ -39,6 +49,7 @@ export function MentionInput({
   onChangeText,
   onMentionsChange,
   style,
+  dropdownPlacement = 'top',
   ...rest
 }: Props) {
   const inputRef = useRef<TextInput | null>(null);
@@ -46,6 +57,7 @@ export function MentionInput({
   const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [queried, setQueried] = useState(false);
   const [mentionIds, setMentionIds] = useState<string[]>([]);
 
   // Memoize the active-mention detection so its identity is stable across
@@ -61,6 +73,7 @@ export function MentionInput({
       // state churn on every render when the user is not composing a mention.
       setSuggestions((prev) => (prev.length === 0 ? prev : []));
       setLoading(false);
+      setQueried(false);
       return;
     }
     let cancelled = false;
@@ -68,8 +81,14 @@ export function MentionInput({
       if (cancelled) return;
       setLoading(true);
       try {
-        const users = await api.discoverUsers(token);
-        if (!cancelled) setSuggestions(users.slice(0, 6));
+        const users = await api.discoverUsers(token, true);
+        // Now that the dropdown is scrollable, show a healthier set of matches
+        // (12 is enough to cover most typical friend lists without punishing
+        // rendering perf on lower-end devices).
+        if (!cancelled) {
+          setSuggestions(users.slice(0, 12));
+          setQueried(true);
+        }
       } catch {
         // Preserve previous suggestions on transient errors — flickering to an
         // empty list and back is more jarring than showing stale results for a
@@ -114,38 +133,60 @@ export function MentionInput({
 
   return (
     <View style={{ width: '100%', position: 'relative' }}>
-      {suggestions.length > 0 || (active && loading) ? (
-        <View testID="mention-suggestions" style={[styles.suggestBox, { pointerEvents: 'box-none' } as any]}>
+      {suggestions.length > 0 || (active && (loading || queried)) ? (
+        <View
+          testID="mention-suggestions"
+          style={[
+            styles.suggestBox,
+            dropdownPlacement === 'bottom' ? styles.suggestBoxBottom : styles.suggestBoxTop,
+            { pointerEvents: 'box-none' } as any,
+          ]}
+        >
           {loading ? (
             <View style={styles.suggestLoading}>
               <ActivityIndicator size="small" color={colors.brandPrimary} />
             </View>
+          ) : suggestions.length === 0 ? (
+            <View style={styles.suggestEmpty} testID="mention-suggestions-empty">
+              <Text style={styles.suggestEmptyTitle}>No matching connections</Text>
+              <Text style={styles.suggestEmptySub}>
+                You can only tag golfers you follow or who follow you.
+              </Text>
+            </View>
           ) : (
-            suggestions.map((s) => {
-              const initials = s.display_name
-                .split(' ')
-                .map((p) => p[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase();
-              return (
-                <Pressable
-                  key={s.id}
-                  testID={`mention-suggest-${s.id}`}
-                  onPress={() => pick(s)}
-                  style={styles.suggestRow}
-                >
-                  <View style={styles.avatar}>
-                    {s.avatar ? (
-                      <Image source={{ uri: s.avatar }} style={{ width: '100%', height: '100%' }} />
-                    ) : (
-                      <Text style={styles.avatarText}>{initials}</Text>
-                    )}
-                  </View>
-                  <Text style={styles.suggestName}>@{s.display_name}</Text>
-                </Pressable>
-              );
-            })
+            <ScrollView
+              testID="mention-suggestions-scroll"
+              style={styles.suggestScroll}
+              keyboardShouldPersistTaps="always"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              {suggestions.map((s) => {
+                const initials = s.display_name
+                  .split(' ')
+                  .map((p) => p[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase();
+                return (
+                  <Pressable
+                    key={s.id}
+                    testID={`mention-suggest-${s.id}`}
+                    onPress={() => pick(s)}
+                    style={styles.suggestRow}
+                  >
+                    <View style={styles.avatar}>
+                      {s.avatar ? (
+                        <Image source={{ uri: s.avatar }} style={{ width: '100%', height: '100%' }} />
+                      ) : (
+                        <Text style={styles.avatarText}>{initials}</Text>
+                      )}
+                    </View>
+                    <Text style={styles.suggestName}>@{s.display_name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           )}
         </View>
       ) : null}
@@ -182,8 +223,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: '100%',
-    marginBottom: spacing.xs,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -192,6 +231,20 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 12,
     ...shadow.soft,
+  },
+  suggestBoxTop: {
+    bottom: '100%',
+    marginBottom: spacing.xs,
+  },
+  suggestBoxBottom: {
+    top: '100%',
+    marginTop: spacing.xs,
+  },
+  suggestScroll: {
+    // Cap the dropdown so a long friends list doesn't push offscreen.
+    // ~5 rows visible at once (each row is ~54px including padding),
+    // remaining rows are reachable via scroll.
+    maxHeight: 264,
   },
   suggestRow: {
     flexDirection: 'row',
@@ -204,6 +257,21 @@ const styles = StyleSheet.create({
   },
   suggestName: { fontSize: 14, fontWeight: '700', color: colors.onSurface },
   suggestLoading: { paddingVertical: 14, alignItems: 'center' },
+  suggestEmpty: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: 4,
+  },
+  suggestEmptyTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.onSurface,
+  },
+  suggestEmptySub: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 16,
+  },
   avatar: {
     width: 28,
     height: 28,

@@ -365,6 +365,7 @@ export default function LogRound() {
               multiline
               placeholder="How did it go? Type @ to tag a friend."
               style={styles.notesInput}
+              dropdownPlacement="bottom"
             />
           </View>
 

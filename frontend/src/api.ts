@@ -252,7 +252,10 @@ export const api = {
     request<{ on_wishlist: boolean }>(`/wishlist/check/${encodeURIComponent(course_name)}`),
   toggleFollow: (id: string) => request<{ following: boolean }>(`/users/${id}/follow`, { method: 'POST' }),
 
-  discoverUsers: (q: string) => request<any[]>(`/discover/users?q=${encodeURIComponent(q)}`),
+  discoverUsers: (q: string, connectionsOnly?: boolean) =>
+    request<any[]>(
+      `/discover/users?q=${encodeURIComponent(q)}${connectionsOnly ? '&connections_only=true' : ''}`,
+    ),
   getUserByName: (name: string) =>
     request<{ id: string; display_name: string; avatar?: string | null }>(
       `/users/by-name/${encodeURIComponent(name)}`,
