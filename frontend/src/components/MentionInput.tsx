@@ -11,7 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { colors, radius, shadow, spacing } from '@/src/theme';
+import { colors, radius, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 
 type Suggestion = { id: string; display_name: string; avatar?: string | null };
@@ -131,65 +131,73 @@ export function MentionInput({
     }
   };
 
-  return (
-    <View style={{ width: '100%', position: 'relative' }}>
-      {suggestions.length > 0 || (active && (loading || queried)) ? (
-        <View
-          testID="mention-suggestions"
-          style={[
-            styles.suggestBox,
-            dropdownPlacement === 'bottom' ? styles.suggestBoxBottom : styles.suggestBoxTop,
-            { pointerEvents: 'box-none' } as any,
-          ]}
-        >
-          {loading ? (
-            <View style={styles.suggestLoading}>
-              <ActivityIndicator size="small" color={colors.brandPrimary} />
-            </View>
-          ) : suggestions.length === 0 ? (
-            <View style={styles.suggestEmpty} testID="mention-suggestions-empty">
-              <Text style={styles.suggestEmptyTitle}>No matching connections</Text>
-              <Text style={styles.suggestEmptySub}>
-                You can only tag golfers you follow or who follow you.
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              testID="mention-suggestions-scroll"
-              style={styles.suggestScroll}
-              keyboardShouldPersistTaps="always"
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-            >
-              {suggestions.map((s) => {
-                const initials = s.display_name
-                  .split(' ')
-                  .map((p) => p[0])
-                  .slice(0, 2)
-                  .join('')
-                  .toUpperCase();
-                return (
-                  <Pressable
-                    key={s.id}
-                    testID={`mention-suggest-${s.id}`}
-                    onPress={() => pick(s)}
-                    style={styles.suggestRow}
-                  >
-                    <View style={styles.avatar}>
-                      {s.avatar ? (
-                        <Image source={{ uri: s.avatar }} style={{ width: '100%', height: '100%' }} />
-                      ) : (
-                        <Text style={styles.avatarText}>{initials}</Text>
-                      )}
-                    </View>
-                    <Text style={styles.suggestName}>@{s.display_name}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          )}
+  const isOpen = !!(suggestions.length > 0 || (active && (loading || queried)));
+
+  const suggestionsPanel = isOpen ? (
+    <View
+      testID="mention-suggestions"
+      style={[
+        styles.suggestBox,
+        dropdownPlacement === 'bottom' ? styles.suggestBoxBottom : styles.suggestBoxTop,
+      ]}
+    >
+      {loading ? (
+        <View style={styles.suggestLoading}>
+          <ActivityIndicator size="small" color={colors.brandPrimary} />
         </View>
-      ) : null}
+      ) : suggestions.length === 0 ? (
+        <View style={styles.suggestEmpty} testID="mention-suggestions-empty">
+          <Text style={styles.suggestEmptyTitle}>No matching connections</Text>
+          <Text style={styles.suggestEmptySub}>
+            You can only tag golfers you follow or who follow you.
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          testID="mention-suggestions-scroll"
+          style={styles.suggestScroll}
+          keyboardShouldPersistTaps="always"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+        >
+          {suggestions.map((s) => {
+            const initials = s.display_name
+              .split(' ')
+              .map((p) => p[0])
+              .slice(0, 2)
+              .join('')
+              .toUpperCase();
+            return (
+              <Pressable
+                key={s.id}
+                testID={`mention-suggest-${s.id}`}
+                onPress={() => pick(s)}
+                style={styles.suggestRow}
+              >
+                <View style={styles.avatar}>
+                  {s.avatar ? (
+                    <Image source={{ uri: s.avatar }} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  )}
+                </View>
+                <Text style={styles.suggestName}>@{s.display_name}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  ) : null;
+
+  return (
+    <View
+      style={[
+        styles.wrapper,
+        isOpen && styles.wrapperOpen,
+      ]}
+    >
+      {dropdownPlacement === 'top' ? suggestionsPanel : null}
 
       <TextInput
         ref={inputRef}
@@ -214,31 +222,59 @@ export function MentionInput({
         style={style}
         placeholderTextColor={colors.muted}
       />
+
+      {dropdownPlacement === 'bottom' ? suggestionsPanel : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    width: '100%',
+    position: 'relative',
+    // Give the wrapper a small base z-index so its absolute-positioned child
+    // (the dropdown) always paints above the input itself.
+    zIndex: 1,
+  },
+  wrapperOpen: {
+    // When the picker is open, lift the entire component well above later
+    // siblings on both web (zIndex) and native (elevation).
+    zIndex: 1000,
+    elevation: 20,
+  },
   suggestBox: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+    // Solid, opaque panel — used for both inline (bottom placement) and
+    // floating (top placement) variants. Placement styles below add / remove
+    // absolute positioning as needed.
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     overflow: 'hidden',
-    zIndex: 999,
-    elevation: 12,
-    ...shadow.soft,
+    zIndex: 1000,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
   },
   suggestBoxTop: {
+    // Floats above the input — used when the input sits near the bottom of
+    // the screen (e.g. the post-detail comment bar), so we can't push content
+    // below it.
+    position: 'absolute',
+    left: 0,
+    right: 0,
     bottom: '100%',
     marginBottom: spacing.xs,
   },
   suggestBoxBottom: {
-    top: '100%',
+    // Renders inline as a normal sibling — pushes the following form content
+    // (Photos, submit button, tip) further down while the picker is open, so
+    // nothing can visually overlap the tag list. When the picker closes,
+    // content springs back into place.
     marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   suggestScroll: {
     // Cap the dropdown so a long friends list doesn't push offscreen.
@@ -252,15 +288,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
+    // Solid backdrop on each row too — belt & braces so nothing shows through
+    // if a parent layer ever becomes translucent.
+    backgroundColor: colors.surfaceSecondary,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
   },
   suggestName: { fontSize: 14, fontWeight: '700', color: colors.onSurface },
-  suggestLoading: { paddingVertical: 14, alignItems: 'center' },
+  suggestLoading: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: colors.surfaceSecondary,
+  },
   suggestEmpty: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     gap: 4,
+    backgroundColor: colors.surfaceSecondary,
   },
   suggestEmptyTitle: {
     fontSize: 13,
