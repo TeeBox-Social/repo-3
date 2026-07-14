@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -47,28 +47,43 @@ export function MentionInput({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [mentionIds, setMentionIds] = useState<string[]>([]);
-  const active = activeMention(value, caret);
 
-  const search = useCallback(async (q: string) => {
-    setLoading(true);
-    try {
-      const users = await api.discoverUsers(q);
-      setSuggestions(users.slice(0, 6));
-    } catch {
-      setSuggestions([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Memoize the active-mention detection so its identity is stable across
+  // unrelated re-renders (parent state changes, keyboard-avoiding view resize,
+  // etc). Without this the search useEffect below would re-fire every render
+  // and cause the suggestions dropdown to visibly flicker.
+  const active = useMemo(() => activeMention(value, caret), [value, caret]);
+  const token = active?.token ?? null;
 
   useEffect(() => {
-    if (!active) {
-      setSuggestions([]);
+    if (token === null) {
+      // Only clear if we actually have something to clear; avoids a needless
+      // state churn on every render when the user is not composing a mention.
+      setSuggestions((prev) => (prev.length === 0 ? prev : []));
+      setLoading(false);
       return;
     }
-    const t = setTimeout(() => search(active.token), 180);
-    return () => clearTimeout(t);
-  }, [active?.token, search, active]);
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const users = await api.discoverUsers(token);
+        if (!cancelled) setSuggestions(users.slice(0, 6));
+      } catch {
+        // Preserve previous suggestions on transient errors — flickering to an
+        // empty list and back is more jarring than showing stale results for a
+        // moment.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [token]);
+
 
   const pick = (u: Suggestion) => {
     if (!active) return;
@@ -139,7 +154,20 @@ export function MentionInput({
         ref={inputRef}
         {...rest}
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={(next) => {
+          // On Android in particular, `onSelectionChange` fires ~1 frame
+          // AFTER `onChangeText`, so between those two events the caret state
+          // is stale and `activeMention(value, caret)` briefly returns the
+          // wrong (or a null) token — causing the suggestions dropdown to
+          // flicker. When the user is simply appending text (the most common
+          // case for typing "@name"), we can safely snap the caret to the end
+          // of the new value immediately. For mid-string edits, we leave the
+          // caret alone and let `onSelectionChange` correct it.
+          if (next.length >= value.length && next.startsWith(value)) {
+            setCaret(next.length);
+          }
+          onChangeText(next);
+        }}
         onSelectionChange={(e) => setCaret(e.nativeEvent.selection.start)}
         selection={selection}
         style={style}
