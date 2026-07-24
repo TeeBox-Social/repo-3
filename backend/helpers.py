@@ -98,13 +98,34 @@ async def emit_notification(
 
 
 # ---- Round enrichment ----
-async def enrich_round(r: dict, viewer_id: Optional[str]) -> dict:
+# RECOMMENDATION #1: Batch-load stats instead of per-round queries
+async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Optional[dict] = None, comment_count_map: Optional[dict] = None, liked_by_me_map: Optional[dict] = None) -> dict:
+    """Enrich a round with author, like, comment, and achievement data.
+    
+    For performance, pass pre-computed stat maps (like_count_map, comment_count_map, liked_by_me_map)
+    to avoid N+1 queries. If not provided, falls back to per-round queries (slower).
+    """
+    round_id = r["id"]
+    
+    # Use pre-computed maps if provided, otherwise fetch individually
+    if like_count_map is not None:
+        like_count = like_count_map.get(round_id, 0)
+    else:
+        like_count = await likes_col.count_documents({"round_id": round_id})
+    
+    if comment_count_map is not None:
+        comment_count = comment_count_map.get(round_id, 0)
+    else:
+        comment_count = await comments_col.count_documents({"round_id": round_id})
+    
+    if liked_by_me_map is not None:
+        liked_by_me = liked_by_me_map.get(round_id, False)
+    elif viewer_id:
+        liked_by_me = await likes_col.find_one({"round_id": round_id, "user_id": viewer_id}) is not None
+    else:
+        liked_by_me = False
+    
     author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0, "email": 0})
-    like_count = await likes_col.count_documents({"round_id": r["id"]})
-    comment_count = await comments_col.count_documents({"round_id": r["id"]})
-    liked_by_me = False
-    if viewer_id:
-        liked_by_me = await likes_col.find_one({"round_id": r["id"], "user_id": viewer_id}) is not None
     r.pop("_id", None)
     return {
         **r,
@@ -182,11 +203,23 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-# ---- Wishlist enrichment ----
-async def enrich_wishlist_entry(entry: dict) -> dict:
-    course = await courses_col.find_one({"name": entry["course_name"]}, {"_id": 0})
+# ---- Wishlist enrichment with batch loading ----
+# RECOMMENDATION #4: Batch-load courses instead of per-entry queries
+async def enrich_wishlist_entry(entry: dict, course_map: Optional[dict] = None) -> dict:
+    """Enrich a wishlist entry with course details.
+    
+    For performance, pass a pre-computed course_map to avoid N+1 queries.
+    If not provided, falls back to individual course lookup (slower).
+    """
+    course_name = entry["course_name"]
+    
+    if course_map is not None:
+        course = course_map.get(course_name)
+    else:
+        course = await courses_col.find_one({"name": course_name}, {"_id": 0})
+    
     return {
-        "course_name": entry["course_name"],
+        "course_name": course_name,
         "added_at": entry.get("created_at"),
         "city": course.get("city") if course else None,
         "region": course.get("region") if course else None,
