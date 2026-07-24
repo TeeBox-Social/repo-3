@@ -40,8 +40,30 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
         {"_id": 0, "total_score": 1, "holes_played": 1, "par": 1, "course_name": 1},
     ).sort("created_at", -1).limit(20)
     recent_scores: List[float] = []
-    course_par_cache: dict[str, int] = {}
+    
+    # ---- QUICK WIN #1: Batch course lookups with $in instead of N+1 ----
+    # First pass: collect all course names from the recent scores
+    score_list = []
+    course_names = set()
     async for s in scores_cursor:
+        score_list.append(s)
+        cname = s.get("course_name")
+        if cname:
+            course_names.add(cname)
+    
+    # Batch-load all courses in one query
+    course_par_cache: dict[str, int] = {}
+    if course_names:
+        async for course in courses_col.find(
+            {"name": {"$in": list(course_names)}},
+            {"_id": 0, "name": 1, "par": 1}
+        ):
+            cname = course.get("name")
+            if cname:
+                course_par_cache[cname] = int(course.get("par") or 0)
+    
+    # Second pass: compute equivalent scores using cached course pars
+    for s in score_list:
         holes = int(s.get("holes_played") or 18)
         raw = float(s.get("total_score") or 0)
         if holes >= 18:
@@ -51,20 +73,19 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
         cname = s.get("course_name")
         if cname:
             if cname in course_par_cache:
-                target_par = course_par_cache[cname]
-            else:
-                course = await courses_col.find_one({"name": cname}, {"_id": 0, "par": 1})
-                cp = int(course.get("par") or 0) if course else 0
+                cp = course_par_cache[cname]
                 if cp >= 60:
                     target_par = cp
                 else:
                     target_par = int(s.get("par") or 36) * 2
-                course_par_cache[cname] = target_par
+            else:
+                target_par = int(s.get("par") or 36) * 2
         else:
             target_par = int(s.get("par") or 36) * 2
         round_par = int(s.get("par") or 36) or 36
         equiv = raw * (target_par / round_par)
         recent_scores.append(equiv)
+    
     avg_score = round(sum(recent_scores) / len(recent_scores), 1) if recent_scores else None
     follower_count = await follows_col.count_documents({"target_id": user_id})
     following_count = await follows_col.count_documents({"user_id": user_id})
@@ -79,6 +100,7 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
         {"$count": "n"},
     ]):
         courses_played = _["n"]
+    
     following_ids = {f["target_id"] async for f in follows_col.find({"user_id": user_id}, {"_id": 0, "target_id": 1})}
     follower_ids = {f["user_id"] async for f in follows_col.find({"target_id": user_id}, {"_id": 0, "user_id": 1})}
     friend_ids = following_ids & follower_ids
@@ -156,13 +178,39 @@ async def get_courses_played(user_id: str, user=Depends(get_current_user)):
 
 @router.get("/users/{user_id}/friends")
 async def get_user_friends(user_id: str, user=Depends(get_current_user)):
-    following_ids = {f["target_id"] async for f in follows_col.find({"user_id": user_id}, {"_id": 0, "target_id": 1})}
-    follower_ids = {f["user_id"] async for f in follows_col.find({"target_id": user_id}, {"_id": 0, "user_id": 1})}
-    friend_ids = following_ids & follower_ids
+    """List friends (mutual follows) with server-side aggregation.
+    
+    QUICK WIN #4: Use $facet aggregation to compute friend intersection server-side,
+    avoiding large in-memory set operations.
+    """
+    # Use server-side aggregation to compute friend IDs efficiently
+    friend_ids: set[str] = set()
+    async for result in follows_col.aggregate([
+        {
+            "$facet": {
+                "following": [
+                    {"$match": {"user_id": user_id}},
+                    {"$project": {"_id": 0, "target_id": 1}},
+                ],
+                "followers": [
+                    {"$match": {"target_id": user_id}},
+                    {"$project": {"_id": 0, "user_id": 1}},
+                ],
+            }
+        },
+    ]):
+        # Extract the IDs from each facet
+        following_ids = {f["target_id"] for f in result.get("following", [])}
+        follower_ids = {f["user_id"] for f in result.get("followers", [])}
+        friend_ids = following_ids & follower_ids
+    
     if not friend_ids:
         return []
+    
+    # Fetch viewer's follow graph once for efficiency
     viewer_following = {f["target_id"] async for f in follows_col.find({"user_id": user["id"]}, {"_id": 0, "target_id": 1})}
     viewer_followers = {f["user_id"] async for f in follows_col.find({"target_id": user["id"]}, {"_id": 0, "user_id": 1})}
+    
     out = []
     async for u in users_col.find({"id": {"$in": list(friend_ids)}}, {"_id": 0, "hashed_password": 0, "email": 0}):
         fid = u["id"]
