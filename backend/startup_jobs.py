@@ -17,11 +17,14 @@ from config import (
     ENABLE_DEMO_SEED,
 )
 from db import (
+    comments_col,
     courses_col,
     follows_col,
     import_jobs_col,
+    likes_col,
     notifications_col,
     refresh_tokens_col,
+    reviews_col,
     rounds_col,
     users_col,
     wishlists_col,
@@ -34,11 +37,17 @@ logger = logging.getLogger(__name__)
 
 
 async def ensure_indexes() -> None:
+    """Create all required indexes for optimal query performance."""
     try:
+        # ---- Auth & tokens ----
         await refresh_tokens_col.create_index("jti", unique=True)
         await refresh_tokens_col.create_index("expires_at", expireAfterSeconds=0)
         await refresh_tokens_col.create_index("family_id")
+        
+        # ---- Wishlist (unique constraint on user + course) ----
         await wishlists_col.create_index([("user_id", 1), ("course_name", 1)], unique=True)
+        
+        # ---- Courses (dedup + geo queries) ----
         try:
             async for grp in courses_col.aggregate([
                 {"$group": {"_id": "$name", "ids": {"$push": "$_id"}, "n": {"$sum": 1}}},
@@ -51,10 +60,40 @@ async def ensure_indexes() -> None:
             logger.warning(f"course dedupe pass skipped: {de}")
         await courses_col.create_index("name", unique=True)
         await courses_col.create_index([("lat", 1), ("lng", 1)])
+        
+        # ---- Import jobs (status tracking) ----
         await import_jobs_col.create_index("status")
         await import_jobs_col.create_index([("created_at", -1)])
+        
+        # ---- Notifications (user-scoped queries) ----
         await notifications_col.create_index([("user_id", 1), ("created_at", -1)])
         await notifications_col.create_index([("user_id", 1), ("read", 1)])
+        
+        # ---- QUICK WIN #5: Missing indexes for hot query patterns ----
+        # Rounds: frequently queried by user_id and course_name
+        await rounds_col.create_index("user_id")
+        await rounds_col.create_index("course_name")
+        await rounds_col.create_index([("user_id", 1), ("created_at", -1)])  # feed queries
+        await rounds_col.create_index([("course_name", 1), ("created_at", -1)])
+        
+        # Likes: queried by round_id and (round_id, user_id) compound
+        await likes_col.create_index("round_id")
+        await likes_col.create_index([("round_id", 1), ("user_id", 1)], unique=True)
+        
+        # Comments: queried by round_id
+        await comments_col.create_index("round_id")
+        await comments_col.create_index([("round_id", 1), ("created_at", 1)])
+        
+        # Follows: frequently used for graph operations (user_id, target_id lookups)
+        await follows_col.create_index("user_id")
+        await follows_col.create_index("target_id")
+        await follows_col.create_index([("user_id", 1), ("target_id", 1)], unique=True)
+        
+        # Reviews: queried by course_name for aggregations
+        await reviews_col.create_index("course_name")
+        await reviews_col.create_index([("course_name", 1), ("created_at", -1)])
+        
+        logger.info("All database indexes created/verified successfully")
     except Exception as e:
         logger.warning(f"index setup skipped: {e}")
 
