@@ -1,5 +1,6 @@
 """Auth endpoints: register, login, refresh, logout, me, patch me,
 plus email verification, password reset, and account lockout logic."""
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -223,17 +224,37 @@ async def refresh(request: Request, data: RefreshIn):
     db_token = await refresh_tokens_col.find_one({"jti": jti})
     if not db_token:
         if family_id:
-            await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+            # RECOMMENDATION #5: Fire-and-forget async revocation instead of blocking
+            asyncio.create_task(
+                refresh_tokens_col.update_many(
+                    {"family_id": family_id}, 
+                    {"$set": {"is_revoked": True}}
+                )
+            )
         raise HTTPException(status_code=401, detail="Refresh token not recognised")
     if db_token.get("is_rotated") or db_token.get("is_revoked"):
-        await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+        # Fire-and-forget revocation to avoid blocking
+        if family_id:
+            asyncio.create_task(
+                refresh_tokens_col.update_many(
+                    {"family_id": family_id}, 
+                    {"$set": {"is_revoked": True}}
+                )
+            )
         raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
     rot = await refresh_tokens_col.find_one_and_update(
         {"jti": jti, "is_rotated": False, "is_revoked": False},
         {"$set": {"is_rotated": True, "rotated_at": now_iso()}},
     )
     if not rot:
-        await refresh_tokens_col.update_many({"family_id": family_id}, {"$set": {"is_revoked": True}})
+        # Fire-and-forget revocation to avoid blocking
+        if family_id:
+            asyncio.create_task(
+                refresh_tokens_col.update_many(
+                    {"family_id": family_id}, 
+                    {"$set": {"is_revoked": True}}
+                )
+            )
         raise HTTPException(status_code=401, detail="Refresh token reuse detected — please sign in again")
     user = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
     if not user:
