@@ -30,8 +30,8 @@ class RefreshIn(BaseModel):
 class RoundIn(BaseModel):
     course_name: str = Field(default="", max_length=120)
     date: Optional[str] = None  # ISO date
-    total_score: Optional[int] = None
-    par: Optional[int] = 72
+    total_score: Optional[int] = Field(None, ge=0, le=200)  # RECOMMENDATION #3: Add bounds
+    par: Optional[int] = Field(72, ge=27, le=90)
     holes_played: Optional[int] = 18
     fairways_hit: Optional[int] = None
     greens_in_regulation: Optional[int] = None
@@ -51,8 +51,8 @@ class RoundUpdate(BaseModel):
     """Partial update — only supplied fields are patched. Author-only."""
     course_name: Optional[str] = Field(default=None, max_length=120)
     date: Optional[str] = None
-    total_score: Optional[int] = None
-    par: Optional[int] = None
+    total_score: Optional[int] = Field(None, ge=0, le=200)  # RECOMMENDATION #3: Add bounds
+    par: Optional[int] = Field(None, ge=27, le=90)
     holes_played: Optional[int] = None
     fairways_hit: Optional[int] = None
     greens_in_regulation: Optional[int] = None
