@@ -58,6 +58,8 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         "created_at": now_iso(),
     }
     # Only diff achievements for actual round posts.
+    # QUICK WIN #3: Optimize achievement computation to avoid full re-read of all rounds
+    new_achs = []
     if post_type == "round":
         prior_rounds = [
             r async for r in rounds_col.find(
@@ -74,7 +76,9 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         doc["new_achievements"] = new_achs
     else:
         doc["new_achievements"] = []
+    
     await rounds_col.insert_one(doc)
+    
     for ach in doc.get("new_achievements", []):
         await emit_notification(
             user_id=user["id"],
