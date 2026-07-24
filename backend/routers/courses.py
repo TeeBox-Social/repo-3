@@ -12,6 +12,33 @@ from security import get_current_user, limiter
 
 router = APIRouter()
 
+# ---- QUICK WIN #2: Pre-compute review stats aggregation helper ----
+async def _get_review_stats_map(course_names: list[str]) -> dict[str, dict]:
+    """
+    Fetch review stats (count, avg rating) for multiple courses in a single aggregation.
+    Returns a dict mapping course_name -> {count: int, avg_rating: float}.
+    """
+    stats_map = {}
+    if not course_names:
+        return stats_map
+    
+    async for result in reviews_col.aggregate([
+        {"$match": {"course_name": {"$in": course_names}}},
+        {
+            "$group": {
+                "_id": "$course_name",
+                "count": {"$sum": 1},
+                "avg": {"$avg": "$rating"},
+            }
+        },
+    ]):
+        course_name = result["_id"]
+        stats_map[course_name] = {
+            "count": result["count"],
+            "avg_rating": round(result["avg"], 2) if result.get("avg") else None,
+        }
+    return stats_map
+
 
 @router.get("/discover/courses")
 async def discover_courses(q: str = "", user=Depends(get_current_user)):
@@ -42,19 +69,22 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
         course_query = {"$and": [course_query, {"name": {"$regex": safe, "$options": "i"}}]}
     master = [c async for c in courses_col.find(course_query, {"_id": 0}).limit(100)]
 
+    # ---- QUICK WIN #2: Pre-compute all review stats in one aggregation ----
+    all_course_names = set()
+    for m in master:
+        all_course_names.add(m["name"])
+    for name in round_agg.keys():
+        all_course_names.add(name)
+    
+    review_stats = await _get_review_stats_map(list(all_course_names))
+
     seen = set()
     out = []
     for m in master:
         name = m["name"]
         seen.add(name)
         r = round_agg.get(name)
-        review_count = await reviews_col.count_documents({"course_name": name})
-        avg_rating = None
-        async for x in reviews_col.aggregate([
-            {"$match": {"course_name": name}},
-            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
-        ]):
-            avg_rating = round(x["avg"], 2)
+        stats = review_stats.get(name, {})
         out.append({
             "course_name": name,
             "city": m.get("city"),
@@ -66,19 +96,14 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
             "avg_score": round(r["avg_score"], 1) if r and r["avg_score"] else None,
             "best_score": r["best_score"] if r else None,
             "last_photo": r.get("last_photo") if r else None,
-            "review_count": review_count,
-            "avg_rating": avg_rating,
+            "review_count": stats.get("count", 0),
+            "avg_rating": stats.get("avg_rating"),
         })
+    
     for name, r in round_agg.items():
         if name in seen:
             continue
-        review_count = await reviews_col.count_documents({"course_name": name})
-        avg_rating = None
-        async for x in reviews_col.aggregate([
-            {"$match": {"course_name": name}},
-            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
-        ]):
-            avg_rating = round(x["avg"], 2)
+        stats = review_stats.get(name, {})
         out.append({
             "course_name": name,
             "city": None,
@@ -90,10 +115,12 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
             "avg_score": round(r["avg_score"], 1) if r["avg_score"] else None,
             "best_score": r["best_score"],
             "last_photo": r.get("last_photo"),
-            "review_count": review_count,
-            "avg_rating": avg_rating,
+            "review_count": stats.get("count", 0),
+            "avg_rating": stats.get("avg_rating"),
         })
+    
     out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
+    # ---- QUICK WIN #6: Enforce pagination limit before returning ----
     return out[:60]
 
 
@@ -131,17 +158,17 @@ async def discover_courses_nearby(
         candidates.append((dist, c))
 
     candidates.sort(key=lambda x: x[0])
+    
+    # ---- QUICK WIN #2: Pre-compute review stats for candidate courses ----
+    candidate_courses = [c["name"] for _, c in candidates[:limit]]
+    review_stats = await _get_review_stats_map(candidate_courses)
+    
+    # ---- QUICK WIN #6: Apply limit before querying play counts ----
     out = []
     for dist, c in candidates[:limit]:
         name = c["name"]
         play_count = await rounds_col.count_documents({"course_name": name})
-        avg_rating = None
-        async for x in reviews_col.aggregate([
-            {"$match": {"course_name": name}},
-            {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
-        ]):
-            avg_rating = round(x["avg"], 2)
-        review_count = await reviews_col.count_documents({"course_name": name})
+        stats = review_stats.get(name, {})
         out.append({
             "course_name": name,
             "city": c.get("city"),
@@ -151,8 +178,8 @@ async def discover_courses_nearby(
             "lng": c.get("lng"),
             "distance_km": round(dist, 1),
             "play_count": play_count,
-            "review_count": review_count,
-            "avg_rating": avg_rating,
+            "review_count": stats.get("count", 0),
+            "avg_rating": stats.get("avg_rating"),
         })
     return out
 
@@ -246,13 +273,11 @@ async def get_reviews(course_name: str, user=Depends(get_current_user)):
 async def get_course(course_name: str, user=Depends(get_current_user)):
     course = await courses_col.find_one({"name": course_name}, {"_id": 0})
     play_count = await rounds_col.count_documents({"course_name": course_name})
-    review_count = await reviews_col.count_documents({"course_name": course_name})
-    avg_rating = None
-    async for x in reviews_col.aggregate([
-        {"$match": {"course_name": course_name}},
-        {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
-    ]):
-        avg_rating = round(x["avg"], 2)
+    
+    # ---- QUICK WIN #2: Use pre-aggregated stats instead of loop ----
+    stats = await _get_review_stats_map([course_name])
+    stats_data = stats.get(course_name, {})
+    
     return {
         "course_name": course_name,
         "city": course.get("city") if course else None,
@@ -261,8 +286,8 @@ async def get_course(course_name: str, user=Depends(get_current_user)):
         "lat": course.get("lat") if course else None,
         "lng": course.get("lng") if course else None,
         "play_count": play_count,
-        "review_count": review_count,
-        "avg_rating": avg_rating,
+        "review_count": stats_data.get("count", 0),
+        "avg_rating": stats_data.get("avg_rating"),
     }
 
 
