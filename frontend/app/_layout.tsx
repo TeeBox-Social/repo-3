@@ -1,7 +1,7 @@
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { LogBox, StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -22,15 +22,6 @@ try {
 } catch {
   // Native module can throw on hot reloads / dev builds — safe to ignore.
 }
-
-// Hard safety net: force-hide the native splash after 2s. The React tree
-// takes over from there — the gateway route (`app/index.tsx`) shows a branded
-// "Warming up" state and self-navigates to sign-in after 5s max. Two seconds
-// is short enough that the user never wonders if the app died, and long enough
-// for the JS bundle to parse on mid-range Android devices.
-setTimeout(() => {
-  SplashScreen.hideAsync().catch(() => {});
-}, 2000);
 
 function ProtectedRouter() {
   const { user, loading, signInWithGoogleSession } = useAuth();
@@ -130,12 +121,31 @@ function ProtectedRouter() {
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
+  // Absolute last-resort escape hatch: if font loading neither resolves nor
+  // errors within 12s (e.g. a hung network on a real device), render anyway so
+  // the app can never get stuck on the native splash forever. On Expo Go the
+  // CDN fonts normally register in well under 2s; on web the map is empty and
+  // `loaded` is true on first render.
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setTimedOut(true), 12000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Gate the whole tree on font readiness. This is the critical fix for the
+  // Expo Go "Font file for ionicons is empty" crash: we must NOT mount any
+  // <Ionicons> (sign-in eye toggle, tab bar, etc.) until the icon font family
+  // is registered. If an icon mounts first, @expo/vector-icons auto-loads the
+  // local .ttf which Metro serves as 0 bytes on Expo Go Android → the promise
+  // rejects and the render tree blanks out (the error overlay is suppressed by
+  // LogBox.ignoreAllLogs, so the user just sees a white screen).
+  const ready = loaded || !!error || timedOut;
 
   useEffect(() => {
-    if (loaded || error) {
+    if (ready) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [loaded, error]);
+  }, [ready]);
 
   // Initialize AdMob SDK once per app session. Best-effort: no-op on web /
   // Expo Go where the native module isn't present.
@@ -143,10 +153,12 @@ export default function RootLayout() {
     initAdMob().catch(() => {});
   }, []);
 
-  // Render the tree even while fonts are still loading — the splash timer
-  // above will retract the native splash after at most 5s. Falling back to
-  // React tree render means users never see an infinite spinner even if the
-  // font-loading promise never resolves for some reason.
+  // Keep the native splash up (return null) until fonts are ready. The splash
+  // is force-retracted via the effect above the instant `ready` flips true.
+  if (!ready) {
+    return null;
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
