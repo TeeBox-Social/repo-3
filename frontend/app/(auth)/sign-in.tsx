@@ -21,6 +21,9 @@ import { useAuth } from '@/src/auth-context';
 
 const { height } = Dimensions.get('window');
 const HERO_H = Math.round(height * 0.42);
+// Lift hero copy up out of the gradient's fade-to-white band so no text ever
+// sits in the washed-out portion where the hero blends into the form surface.
+const HERO_COPY_BOTTOM = Math.round(HERO_H * 0.3);
 
 // Storage keys for the Remember-me feature. Loaded lazily via a require() so
 // that if the storage module fails to load for any reason (bad native module
@@ -127,15 +130,15 @@ export default function SignIn() {
       <View style={[styles.hero, { height: HERO_H }]}>
         <Image source={{ uri: IMAGES.authHero }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
         <LinearGradient
-          colors={['rgba(19,42,28,0.15)', 'rgba(19,42,28,0.4)', colors.surface]}
-          locations={[0, 0.55, 1]}
+          colors={['rgba(19,42,28,0.15)', 'rgba(19,42,28,0.45)', colors.surface]}
+          locations={[0, 0.7, 1]}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.heroCopy}>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>TEEBOX</Text>
           </View>
-          <Text style={styles.heroTitle}>Your golf, {'\n'}your people.</Text>
+          <Text style={styles.heroTitle}>TeeBox Social</Text>
           <Text style={styles.heroSub}>Log rounds, review courses, and keep the group chat rolling.</Text>
         </View>
       </View>
@@ -244,7 +247,7 @@ export default function SignIn() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   hero: { justifyContent: 'flex-end' },
-  heroCopy: { padding: spacing.xl, gap: spacing.sm },
+  heroCopy: { padding: spacing.xl, paddingBottom: HERO_COPY_BOTTOM, gap: spacing.sm },
   badge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.94)',
