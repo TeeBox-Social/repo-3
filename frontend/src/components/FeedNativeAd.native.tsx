@@ -11,8 +11,16 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+
+// AdMob's native module (RNGoogleMobileAdsModule) is NOT bundled into Expo Go —
+// requiring `react-native-google-mobile-ads` there throws a hard
+// `TurboModuleRegistry.getEnforcing(...) could not be found` error that crashes
+// the app. Only dev-client / standalone / production builds contain the native
+// binary, so we gate ALL access to the module behind this flag.
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 // Google's public test Ad Unit IDs — safe to click during development.
 const TEST_NATIVE_AD_UNIT = {
@@ -39,7 +47,9 @@ function pickAdUnitId(): string {
 // bundle with "Importing native-only module ... on web".
 let adsModulePromise: Promise<any | null> | null = null;
 function loadAdsModule(): Promise<any | null> {
-  if (Platform.OS === 'web') return Promise.resolve(null);
+  // Web has no AdMob; Expo Go has no native binary for it. Bail before the
+  // require() so we never hit the TurboModule "could not be found" crash.
+  if (Platform.OS === 'web' || isExpoGo) return Promise.resolve(null);
   if (!adsModulePromise) {
     adsModulePromise = (async () => {
       try {

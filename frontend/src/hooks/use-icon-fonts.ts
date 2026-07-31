@@ -6,19 +6,39 @@
 // ICON_VECTOR_VERSION must match @expo/vector-icons in package.json.
 // Usage: const [loaded, error] = useIconFonts();
 
+import { Platform } from "react-native";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useFonts } from "expo-font";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 // Ionicons is the ONLY @expo/vector-icons family the app renders, so we only
-// need to preload that one font. `Ionicons.font` is the library's own static
-// font map ({ ionicons: <bundled .ttf> }) — this is the Expo-documented,
-// reliable way to preload icon fonts and works in Expo Go, dev builds and
-// production alike.
+// need to preload that one font. WHERE we load it from depends on the runtime:
 //
-// This replaces a previous runtime-CDN loader that fetched every icon family
-// from jsDelivr. That approach was fragile on real devices / published builds
-// (it depended on live network access to a CDN at cold start) and, combined
-// with the tree rendering before the fonts registered, caused the Expo Go
-// blank / stuck-on-splash symptom.
+//  • Expo Go (StoreClient): the bundled .ttf is served to the device as an
+//    EMPTY (0-byte) file over the Metro dev tunnel — useFonts(Ionicons.font)
+//    then rejects with "Font file for ionicons is empty". So we fetch the real
+//    font bytes from the jsDelivr CDN instead. (Version must match the
+//    installed @expo/vector-icons so the glyph map lines up.)
+//  • Dev-client / standalone / production builds: the .ttf is bundled straight
+//    into the native binary and resolves correctly, so we use the reliable,
+//    offline-friendly local map.
+//  • Web: @expo/vector-icons injects its own @font-face, so an empty map is
+//    enough and resolves to [true, null] on the first render.
+//
+// Combined with the render-gating in app/_layout.tsx (the tree only mounts
+// after this resolves), the 'ionicons' family is registered BEFORE any
+// <Ionicons> mounts — so @expo/vector-icons never auto-loads the empty local
+// copy that used to blank the screen.
+const ICON_VECTOR_VERSION = "15.1.1";
+const IONICONS_CDN = `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf`;
+
+function iconFontMap(): Record<string, any> {
+  if (Platform.OS === "web") return {};
+  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+    return { ionicons: IONICONS_CDN };
+  }
+  return Ionicons.font;
+}
+
 export const useIconFonts = (): readonly [boolean, Error | null] =>
-  useFonts(Ionicons.font);
+  useFonts(iconFontMap());
