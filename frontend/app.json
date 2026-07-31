@@ -71,20 +71,6 @@
         }
       ],
       [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-1035050955026373~8956251041",
-          "iosAppId": "ca-app-pub-3940256099942544~1458002511",
-          "skAdNetworkItems": [
-            "cstr6suwn9.skadnetwork",
-            "4fzdc2evr5.skadnetwork",
-            "4pfyvq9l8r.skadnetwork",
-            "2fnua5tdw4.skadnetwork",
-            "ydx93a7ass.skadnetwork"
-          ]
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "ios": {
