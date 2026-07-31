@@ -6,47 +6,19 @@
 // ICON_VECTOR_VERSION must match @expo/vector-icons in package.json.
 // Usage: const [loaded, error] = useIconFonts();
 
-import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useFonts } from "expo-font";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
-const ICON_VECTOR_VERSION = "15.1.1";
-
-// short internal fontName (what the library queries) -> CDN .ttf file name
-const ICON_FAMILIES: Record<string, string> = {
-  anticon: "AntDesign",
-  entypo: "Entypo",
-  evilicons: "EvilIcons",
-  feather: "Feather",
-  FontAwesome: "FontAwesome",
-  Fontisto: "Fontisto",
-  foundation: "Foundation",
-  ionicons: "Ionicons",
-  "material-community": "MaterialCommunityIcons",
-  material: "MaterialIcons",
-  octicons: "Octicons",
-  "simple-line-icons": "SimpleLineIcons",
-  zocial: "Zocial",
-  // FontAwesome5 style variants (key = `FontAwesome5Free-<style>`)
-  "FontAwesome5Free-Regular": "FontAwesome5_Regular",
-  "FontAwesome5Free-Solid": "FontAwesome5_Solid",
-  "FontAwesome5Free-Brand": "FontAwesome5_Brands",
-  // FontAwesome6 style variants (key = `FontAwesome6Free-<style>`)
-  "FontAwesome6Free-Regular": "FontAwesome6_Regular",
-  "FontAwesome6Free-Solid": "FontAwesome6_Solid",
-  "FontAwesome6Free-Brand": "FontAwesome6_Brands",
-};
-
-const cdnUrl = (file: string): string =>
-  `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/${file}.ttf`;
-
-const iconFontMap = (): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(ICON_FAMILIES).map(([key, file]) => [key, cdnUrl(file)]),
-  );
-
+// Ionicons is the ONLY @expo/vector-icons family the app renders, so we only
+// need to preload that one font. `Ionicons.font` is the library's own static
+// font map ({ ionicons: <bundled .ttf> }) — this is the Expo-documented,
+// reliable way to preload icon fonts and works in Expo Go, dev builds and
+// production alike.
+//
+// This replaces a previous runtime-CDN loader that fetched every icon family
+// from jsDelivr. That approach was fragile on real devices / published builds
+// (it depended on live network access to a CDN at cold start) and, combined
+// with the tree rendering before the fonts registered, caused the Expo Go
+// blank / stuck-on-splash symptom.
 export const useIconFonts = (): readonly [boolean, Error | null] =>
-  useFonts(
-    Constants.executionEnvironment === ExecutionEnvironment.StoreClient
-      ? iconFontMap()
-      : {},
-  );
+  useFonts(Ionicons.font);
