@@ -30,7 +30,7 @@ from pymongo import MongoClient  # noqa: E402
 _sync_client = MongoClient(MONGO_URL)
 users_col = _sync_client[DB_NAME]["users"]
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://tee-social-2.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://course-crew-3.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 
