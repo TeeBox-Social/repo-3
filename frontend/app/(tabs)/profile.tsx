@@ -28,21 +28,34 @@ export default function Profile() {
   const [achievements, setAchievements] = useState<any | null>(null);
   const [wishlist, setWishlist] = useState<any[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const [p, r, a, w] = await Promise.all([
-        api.getUser(user.id),
+      // The core profile record must load for the screen to render. Fetching it
+      // on its own (instead of bundling all four calls in one Promise.all) means
+      // a failure in any of the SECONDARY calls below can never blank the whole
+      // page or spin it forever — which was the "profile won't open" bug.
+      const p = await api.getUser(user.id);
+      setProfile(p);
+      setStatus('ready');
+      // Secondary data is best-effort: load independently and keep whatever
+      // succeeds. A rejected call just leaves that one section empty.
+      const [r, a, w] = await Promise.allSettled([
         api.getUserRounds(user.id),
         api.getUserAchievements(user.id),
         api.getUserWishlist(user.id),
       ]);
-      setProfile(p);
-      setRounds(r);
-      setAchievements(a);
-      setWishlist(w);
-    } catch {}
+      if (r.status === 'fulfilled') setRounds(r.value);
+      if (a.status === 'fulfilled') setAchievements(a.value);
+      if (w.status === 'fulfilled') setWishlist(w.value);
+    } catch {
+      // Only reached if the core profile fetch failed. Show a retry state
+      // instead of an infinite spinner — unless we already have data (a
+      // background refresh failing should not tear down the screen).
+      setStatus((prev) => (prev === 'ready' ? 'ready' : 'error'));
+    }
   }, [user]);
 
   useEffect(() => {
@@ -86,6 +99,26 @@ export default function Profile() {
       );
     } catch {}
   };
+
+  if (status === 'error' && !profile) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={44} color={colors.muted} />
+        <Text style={styles.errorTitle}>Couldn&apos;t load your profile</Text>
+        <Text style={styles.errorSub}>Check your connection and try again.</Text>
+        <View style={{ marginTop: spacing.lg }}>
+          <TBButton
+            label="Retry"
+            testID="profile-retry"
+            onPress={() => {
+              setStatus('loading');
+              load();
+            }}
+          />
+        </View>
+      </View>
+    );
+  }
 
   if (!profile) {
     return (
@@ -401,7 +434,9 @@ function iconFor(key: string): any {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
-  center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.sm },
+  errorTitle: { fontSize: 17, fontWeight: '800', color: colors.onSurface, marginTop: spacing.sm },
+  errorSub: { fontSize: 13, color: colors.muted, textAlign: 'center' },
   cover: { height: 220, backgroundColor: colors.surfaceInverse },
   coverTopBar: {
     flexDirection: 'row',
