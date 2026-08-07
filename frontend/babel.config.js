@@ -8,10 +8,11 @@ module.exports = function (api) {
     // the plugin is NOT applied in EAS standalone release builds, so worklet
     // initialisation crashes the app at launch on the New Architecture (while
     // Expo Go / web dev mask the issue).
-    // KEEP worklets plugin before reanimated's plugin (react-native-reanimated/plugin)
-    plugins: [
-      'react-native-worklets/plugin',
-      'react-native-reanimated/plugin' // must be LAST
-    ],
+    //
+    // NOTE: In Reanimated 4, `react-native-reanimated/plugin` is just a
+    // re-export of `react-native-worklets/plugin`, so we register ONLY the
+    // worklets plugin here — adding both would run the same transform twice
+    // and break the build. This MUST remain the last plugin.
+    plugins: ['react-native-worklets/plugin'],
   };
 };
