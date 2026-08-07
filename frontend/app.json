@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "teebox",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.teeboxsocial.app",
@@ -75,6 +75,12 @@
         {
           "ios": {
             "useFrameworks": "static"
+          },
+          "android": {
+            "enableHermes": true,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24
           }
         }
       ]

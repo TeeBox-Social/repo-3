@@ -7,7 +7,11 @@ module.exports = function (api) {
     // react-native-keyboard-controller). Without an explicit babel.config.js
     // the plugin is NOT applied in EAS standalone release builds, so worklet
     // initialisation crashes the app at launch on the New Architecture (while
-    // Expo Go / web dev mask the issue). This MUST remain the LAST plugin.
-    plugins: ['react-native-worklets/plugin'],
+    // Expo Go / web dev mask the issue).
+    // KEEP worklets plugin before reanimated's plugin (react-native-reanimated/plugin)
+    plugins: [
+      'react-native-worklets/plugin',
+      'react-native-reanimated/plugin' // must be LAST
+    ],
   };
 };
