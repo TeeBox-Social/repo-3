@@ -112,6 +112,8 @@ function ProtectedRouter() {
       <Stack.Screen name="course/[name]" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
       <Stack.Screen name="profile/admin/courses" options={{ presentation: 'card' }} />
+      <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+      <Stack.Screen name="premium" options={{ presentation: 'card' }} />
       <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
       <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
       <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />

@@ -52,15 +52,18 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="more"
         options={{
           title: 'More',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'menu' : 'menu-outline'} size={24} color={color} />
           ),
-          tabBarButtonTestID: 'tab-profile',
+          tabBarButtonTestID: 'tab-more',
         }}
       />
+      {/* Profile is reachable from the feed avatar and the More menu, but is no
+          longer a tab itself — hide it from the tab bar while keeping the route. */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

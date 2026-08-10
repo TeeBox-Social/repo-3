@@ -81,3 +81,7 @@ Users: `GET /users/{id}`, `GET /users/{id}/rounds`, `POST /users/{id}/follow`
 Discover: `GET /discover/users?q=`, `GET /discover/courses?q=`
 Reviews: `GET /courses/{course_name}/reviews`, `POST /courses/reviews`
 Utility: `POST /seed` (idempotent), `GET /` (health)
+
+
+## Navigation — bottom tabs
+Feed · Discover · Log · **More**. The "More" tab (`app/(tabs)/more.tsx`) is a menu of app features: View profile (Profile is a hidden `href:null` route, also reached via feed avatar), Buy Premium (`app/premium.tsx` — upsell placeholder, Subscribe disabled/coming soon), App Settings (`app/settings.tsx` — account info, Light/Dark/System appearance selector persisted to storage key `appearance`, app version, Edit profile, Log out), Notification settings, Course Library (admin only), Log out. Full dark-mode theming is a planned follow-up (selector persists the preference today).
