@@ -19,6 +19,7 @@ import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { MentionInput } from '@/src/components/MentionInput';
 import { CourseAutocomplete } from '@/src/components/CourseAutocomplete';
+import { NotificationBell } from '@/src/components/NotificationBell';
 import { api } from '@/src/api';
 
 // This screen doubles as the Share Intent target.
@@ -174,16 +175,21 @@ export default function LogRound() {
     <View style={styles.container} testID="log-round-screen">
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
-          <Text style={styles.title}>
-            {postType === 'round' ? 'Log a round' : postType === 'lfg' ? 'Looking for group' : 'New post'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {postType === 'round'
-              ? 'Give the group chat something to talk about.'
-              : postType === 'lfg'
-                ? 'Tell your circle when you\u2019re playing and who you need.'
-                : 'Share a thought, tip, or story with your circle.'}
-          </Text>
+          <View style={styles.titleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>
+                {postType === 'round' ? 'Log a round' : postType === 'lfg' ? 'Looking for group' : 'New post'}
+              </Text>
+              <Text style={styles.subtitle}>
+                {postType === 'round'
+                  ? 'Give the group chat something to talk about.'
+                  : postType === 'lfg'
+                    ? 'Tell your circle when you\u2019re playing and who you need.'
+                    : 'Share a thought, tip, or story with your circle.'}
+              </Text>
+            </View>
+            <NotificationBell />
+          </View>
           <View style={styles.segRow} testID="log-type-segment">
             {(['round', 'text', 'lfg'] as const).map((t) => (
               <Pressable
@@ -433,6 +439,7 @@ const styles = StyleSheet.create({
   headerSafe: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.divider },
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: { fontSize: 26, fontWeight: '800', color: colors.onSurface },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   subtitle: { fontSize: 14, color: colors.muted, marginTop: 2 },
   segRow: {
     flexDirection: 'row',

@@ -138,7 +138,12 @@ export default function UserDetail() {
           label="Avg"
           value={profile.avg_score != null ? String(profile.avg_score) : '—'}
         />
-        <StatCell label="Courses" value={String(profile.courses_played || 0)} />
+        <StatCell
+          label="Courses"
+          value={String(profile.courses_played || 0)}
+          onPress={() => router.push(`/user/${profile.id}/courses-played`)}
+          testID="user-stat-courses"
+        />
         <StatCell
           label="Friends"
           value={String(profile.friends_count || 0)}

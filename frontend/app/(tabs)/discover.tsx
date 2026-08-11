@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
+import { NotificationBell } from '@/src/components/NotificationBell';
 
 type Tab = 'golfers' | 'courses';
 type LocationState =
@@ -121,7 +122,10 @@ export default function Discover() {
     <View style={styles.container} testID="discover-screen">
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
-          <Text style={styles.title}>Discover</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Discover</Text>
+            <NotificationBell />
+          </View>
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color={colors.muted} />
             <TextInput
@@ -405,6 +409,7 @@ const styles = StyleSheet.create({
   headerSafe: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.divider },
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md, gap: spacing.md },
   title: { fontSize: 26, fontWeight: '800', color: colors.onSurface },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

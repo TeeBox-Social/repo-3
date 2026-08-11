@@ -10,6 +10,7 @@ from helpers import (
     emit_notification,
     enrich_round,
     now_iso,
+    public_user,
     validate_b64_image,
 )
 from models import CommentIn, CommentUpdate, RoundIn, RoundUpdate
@@ -338,3 +339,33 @@ async def toggle_comment_like(round_id: str, comment_id: str, user=Depends(get_c
                 },
             )
     return {"liked": liked, "like_count": len(liked_by)}
+
+
+
+@router.get("/rounds/{round_id}/likes")
+async def get_round_likers(round_id: str, user=Depends(get_current_user)):
+    """List the users who liked a round (most recent first)."""
+    user_ids: list[str] = []
+    async for like in likes_col.find({"round_id": round_id}, {"_id": 0, "user_id": 1}).sort("created_at", -1):
+        if like.get("user_id"):
+            user_ids.append(like["user_id"])
+    return await _users_for_ids(user_ids)
+
+
+@router.get("/rounds/{round_id}/comments/{comment_id}/likes")
+async def get_comment_likers(round_id: str, comment_id: str, user=Depends(get_current_user)):
+    """List the users who liked a specific comment."""
+    c = await comments_col.find_one({"id": comment_id, "round_id": round_id}, {"_id": 0, "liked_by": 1})
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return await _users_for_ids(c.get("liked_by") or [])
+
+
+async def _users_for_ids(user_ids: list[str]) -> list[dict]:
+    """Fetch public user objects for a list of ids, preserving input order."""
+    if not user_ids:
+        return []
+    docs = {}
+    async for u in users_col.find({"id": {"$in": user_ids}}, {"_id": 0, "hashed_password": 0}):
+        docs[u["id"]] = public_user(u)
+    return [docs[uid] for uid in user_ids if uid in docs]

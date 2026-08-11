@@ -20,6 +20,7 @@ import { colors, radius, shadow, spacing } from '@/src/theme';
 import { api } from '@/src/api';
 import { MentionInput } from '@/src/components/MentionInput';
 import { MentionText } from '@/src/components/MentionText';
+import { LikersSheet } from '@/src/components/LikersSheet';
 import { HoleGrid } from '@/src/components/HoleGrid';
 import { useAuth } from '@/src/auth-context';
 
@@ -34,6 +35,12 @@ export default function PostDetail() {
   const [posting, setPosting] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [pinLoading, setPinLoading] = useState(false);
+  // Likers sheet: null = closed. Holds which round/comment to show likers for.
+  const [likersSource, setLikersSource] = useState<
+    | { kind: 'round'; roundId: string }
+    | { kind: 'comment'; roundId: string; commentId: string }
+    | null
+  >(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -270,14 +277,24 @@ export default function PostDetail() {
             {round.notes ? <MentionText text={round.notes} style={styles.notes} /> : null}
 
             <View style={styles.actions}>
-              <Pressable testID="post-like" onPress={onLike} style={styles.actionBtn} hitSlop={6}>
-                <Ionicons
-                  name={round.liked_by_me ? 'heart' : 'heart-outline'}
-                  size={22}
-                  color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
-                />
-                <Text style={styles.actionText}>{round.like_count} likes</Text>
-              </Pressable>
+              <View style={styles.likeGroup}>
+                <Pressable testID="post-like" onPress={onLike} style={styles.actionBtn} hitSlop={6}>
+                  <Ionicons
+                    name={round.liked_by_me ? 'heart' : 'heart-outline'}
+                    size={22}
+                    color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
+                  />
+                </Pressable>
+                <Pressable
+                  testID="post-like-count"
+                  disabled={!round.like_count}
+                  onPress={() => setLikersSource({ kind: 'round', roundId: String(id) })}
+                  hitSlop={6}
+                  style={styles.likeCountBtn}
+                >
+                  <Text style={styles.actionText}>{round.like_count} likes</Text>
+                </Pressable>
+              </View>
               <View style={styles.actionBtn}>
                 <Ionicons name="chatbubble-outline" size={20} color={colors.onSurface} />
                 <Text style={styles.actionText}>{round.comment_count} comments</Text>
@@ -314,6 +331,9 @@ export default function PostDetail() {
                           : prev,
                       )
                     }
+                    onShowLikers={(cid) =>
+                      setLikersSource({ kind: 'comment', roundId: String(id), commentId: cid })
+                    }
                   />
                 ))
               ) : (
@@ -347,6 +367,15 @@ export default function PostDetail() {
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
+
+      <LikersSheet
+        visible={!!likersSource}
+        onClose={() => setLikersSource(null)}
+        source={likersSource}
+        title={likersSource?.kind === 'comment' ? 'Liked this comment' : 'Liked by'}
+        fetchRoundLikers={api.getRoundLikers}
+        fetchCommentLikers={api.getCommentLikers}
+      />
     </View>
   );
 }
@@ -367,6 +396,7 @@ function CommentRow({
   onLikeChange,
   onDeleted,
   onEdited,
+  onShowLikers,
 }: {
   c: any;
   roundId: string;
@@ -374,6 +404,7 @@ function CommentRow({
   onLikeChange: (next: { id: string; liked_by_me: boolean; like_count: number }) => void;
   onDeleted: (id: string) => void;
   onEdited: (id: string, text: string) => void;
+  onShowLikers: (commentId: string) => void;
 }) {
   const initials = (c.author?.display_name || 'G')
     .split(' ')
@@ -507,21 +538,28 @@ function CommentRow({
           />
         )}
       </View>
-      <Pressable
-        testID={`comment-like-${c.id}`}
-        onPress={onToggle}
-        hitSlop={10}
-        style={styles.commentLikeBtn}
-      >
-        <Ionicons
-          name={c.liked_by_me ? 'heart' : 'heart-outline'}
-          size={16}
-          color={c.liked_by_me ? colors.brandSecondary : colors.muted}
-        />
+      <View style={styles.commentLikeBtn}>
+        <Pressable
+          testID={`comment-like-${c.id}`}
+          onPress={onToggle}
+          hitSlop={10}
+        >
+          <Ionicons
+            name={c.liked_by_me ? 'heart' : 'heart-outline'}
+            size={16}
+            color={c.liked_by_me ? colors.brandSecondary : colors.muted}
+          />
+        </Pressable>
         {(c.like_count || 0) > 0 ? (
-          <Text style={styles.commentLikeCount}>{c.like_count}</Text>
+          <Pressable
+            testID={`comment-like-count-${c.id}`}
+            onPress={() => onShowLikers(c.id)}
+            hitSlop={8}
+          >
+            <Text style={styles.commentLikeCount}>{c.like_count}</Text>
+          </Pressable>
         ) : null}
-      </Pressable>
+      </View>
       {isOwn && !editing ? (
         <Pressable
           testID={`comment-menu-${c.id}`}
@@ -652,6 +690,8 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   actions: { flexDirection: 'row', gap: spacing.xl, paddingVertical: spacing.sm },
+  likeGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  likeCountBtn: { paddingVertical: 2 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 14, fontWeight: '700', color: colors.onSurface },
   commentsSection: { gap: spacing.md, marginTop: spacing.md },

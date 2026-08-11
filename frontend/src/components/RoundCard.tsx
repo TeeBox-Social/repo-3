@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { MentionText } from '@/src/components/MentionText';
 import { MentionInput } from '@/src/components/MentionInput';
+import { LikersSheet } from '@/src/components/LikersSheet';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -80,6 +81,7 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
   const [commentMentions, setCommentMentions] = useState<string[]>([]);
   const [posting, setPosting] = useState(false);
   const [commentCount, setCommentCount] = useState<number>(round.comment_count || 0);
+  const [likersOpen, setLikersOpen] = useState(false);
 
   const openComposer = () => {
     Haptics.selectionAsync().catch(() => {});
@@ -271,22 +273,35 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
 
       {/* Action bar */}
       <View style={styles.actions}>
-        <Pressable
-          testID={`round-card-like-${round.id}`}
-          hitSlop={8}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            onLike();
-          }}
-          style={styles.actionBtn}
-        >
-          <Ionicons
-            name={round.liked_by_me ? 'heart' : 'heart-outline'}
-            size={16}
-            color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
-          />
-          <Text style={styles.actionText}>{round.like_count}</Text>
-        </Pressable>
+        <View style={styles.likeGroup}>
+          <Pressable
+            testID={`round-card-like-${round.id}`}
+            hitSlop={8}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              onLike();
+            }}
+            style={styles.actionBtn}
+          >
+            <Ionicons
+              name={round.liked_by_me ? 'heart' : 'heart-outline'}
+              size={16}
+              color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
+            />
+          </Pressable>
+          <Pressable
+            testID={`round-card-like-count-${round.id}`}
+            hitSlop={8}
+            disabled={!round.like_count}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setLikersOpen(true);
+            }}
+            style={styles.likeCountBtn}
+          >
+            <Text style={styles.actionText}>{round.like_count}</Text>
+          </Pressable>
+        </View>
         <Pressable
           testID={`round-card-comment-${round.id}`}
           hitSlop={8}
@@ -347,6 +362,15 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <LikersSheet
+        visible={likersOpen}
+        onClose={() => setLikersOpen(false)}
+        source={{ kind: 'round', roundId: round.id }}
+        title="Liked by"
+        fetchRoundLikers={api.getRoundLikers}
+        fetchCommentLikers={api.getCommentLikers}
+      />
     </Pressable>
   );
 }
@@ -502,6 +526,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.divider,
   },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  likeGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  likeCountBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   actionText: { fontSize: 13, color: colors.onSurface, fontWeight: '700' },
   subFooter: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },

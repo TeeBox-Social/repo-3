@@ -85,3 +85,9 @@ Utility: `POST /seed` (idempotent), `GET /` (health)
 
 ## Navigation — bottom tabs
 Feed · Discover · Log · **More**. The "More" tab (`app/(tabs)/more.tsx`) is a menu of app features: View profile (Profile is a hidden `href:null` route, also reached via feed avatar), Buy Premium (`app/premium.tsx` — upsell placeholder, Subscribe disabled/coming soon), App Settings (`app/settings.tsx` — account info, Light/Dark/System appearance selector persisted to storage key `appearance`, app version, Edit profile, Log out), Notification settings, Course Library (admin only), Log out. Full dark-mode theming is a planned follow-up (selector persists the preference today).
+
+
+## Iteration 7 additions (social engagement)
+- **Who liked this** — tapping the like COUNT (not the heart) on a feed round card, on the post-detail post, or on any comment opens `LikersSheet` (`src/components/LikersSheet.tsx`), a bottom sheet listing the users who liked it; tapping a user opens their profile. Heart taps still toggle the like. Backend: `GET /rounds/{id}/likes`, `GET /rounds/{roundId}/comments/{commentId}/likes` (api.getRoundLikers / api.getCommentLikers).
+- **Notification bell everywhere** — `NotificationBell` (unread-badge, refreshes on focus) is now in the headers of Discover, Log, and Profile (in addition to the Feed). Taps route to `/notifications`.
+- **Tappable played courses on other profiles** — the "Courses" stat on another user's profile (`app/user/[id].tsx`) navigates to their courses-played list (previously only worked on own profile).

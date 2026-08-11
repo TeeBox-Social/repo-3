@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only smoke tests for the three new features on TeeBox (web preview, mobile viewport 390x844). All three flows PASS end-to-end: (1) Likers list on the Feed (tap round-card-like-count opens likers-sheet, tapping a liker navigates to /user/<id>, and the heart still toggles the like without opening the sheet); (2) Notification bell in Discover, Log, and Profile headers all navigate to /notifications on tap; (3) Post detail likers work for both the round (post-like-count opens sheet, post-like toggles cleanly) and per-comment (comment-like-count-<id> opens sheet, comment-like-<id> toggles cleanly). Regression: Feed still loads, feed comment composer still opens, post-detail comments render. Logged in as reese@teebox.demo/password123.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted from multiple screens/components using shadow.card/shadow.soft. Not blocking, but should be migrated. Reference: /app/frontend/src/theme (shadow tokens applied across cards)."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — RoundCard modal composer uses pointerEvents=\"box-none\" as a prop. Reference: /app/frontend/src/components/RoundCard.tsx:326"}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_25.json"],
+  "action_items": [
+    "None blocking. Optional cleanup: migrate shadow* style props to boxShadow, and move pointerEvents to style.pointerEvents on the RoundCard composer KeyboardAvoidingView (RoundCard.tsx:326)."
+  ],
+  "critical_code_review_comments": [
+    "LikersSheet always routes to /user/<id>. Note two dynamic folders exist (app/user/[id] and app/user/[userId]) — pre-existing and not introduced by this change, but should be reconciled to avoid future ambiguity.",
+    "In post/[id].tsx, post-like-count uses disabled={!round.like_count} so tap works only when count > 0 — matches intent. Same for comment-like-count-<id> which is only rendered when like_count > 0."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (all targeted flows passed)"},
+  "seed_data_creation": "None. Used existing demo seed data (Reese's round with existing like from Kurt Hafeken; existing comments on round).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login: reese@teebox.demo / password123. To reproduce likers flow, from the Feed pick the first round card (testID round-card-<uuid>); if like_count=0 tap round-card-like-<id> heart first, then tap round-card-like-count-<id>. Post detail likers: navigate to /post/<roundId>; test post-like-count and per-comment comment-like-count-<commentId>. All new testIDs verified present and functional.",
+  "rca_of_issue": "N/A — no bugs found for the requested features."
+}

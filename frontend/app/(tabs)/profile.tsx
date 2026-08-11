@@ -19,6 +19,7 @@ import { useAuth } from '@/src/auth-context';
 import { TBButton } from '@/src/components/TBButton';
 import { RoundCard } from '@/src/components/RoundCard';
 import { WishlistList } from '@/src/components/WishlistList';
+import { NotificationBell } from '@/src/components/NotificationBell';
 
 export default function Profile() {
   const router = useRouter();
@@ -151,6 +152,7 @@ export default function Profile() {
         />
         <SafeAreaView edges={['top']} style={styles.coverTopBar}>
           <View style={{ flex: 1 }} />
+          <NotificationBell color="#fff" testID="profile-notifications" />
           <Pressable
             testID="profile-edit"
             onPress={() => router.push('/profile/edit')}
@@ -442,6 +444,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
   },
   iconBtn: {
     width: 40,

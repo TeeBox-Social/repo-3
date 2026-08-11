@@ -193,6 +193,9 @@ export const api = {
   getRound: (id: string) => request<any>(`/rounds/${id}`),
   deleteRound: (id: string) => request<any>(`/rounds/${id}`, { method: 'DELETE' }),
   toggleLike: (id: string) => request<{ liked: boolean; like_count: number }>(`/rounds/${id}/like`, { method: 'POST' }),
+  getRoundLikers: (id: string) => request<any[]>(`/rounds/${id}/likes`),
+  getCommentLikers: (roundId: string, commentId: string) =>
+    request<any[]>(`/rounds/${roundId}/comments/${commentId}/likes`),
   getComments: (id: string) => request<any[]>(`/rounds/${id}/comments`),
   addComment: (id: string, text: string, mentions: string[] = []) =>
     request<any>(`/rounds/${id}/comments`, { method: 'POST', body: JSON.stringify({ text, mentions }) }),
