@@ -6,11 +6,10 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   TextInput,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -127,13 +126,11 @@ export default function PostDetail() {
 
   return (
     <View style={styles.container} testID="post-detail-screen">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
             {hasPhoto ? (

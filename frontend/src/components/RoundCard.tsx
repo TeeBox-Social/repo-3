@@ -1,5 +1,6 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View, Alert, Modal, ActivityIndicator } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +8,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { MentionText } from '@/src/components/MentionText';
+import { MentionInput } from '@/src/components/MentionInput';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -70,6 +72,40 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
   const openPost = () => {
     Haptics.selectionAsync().catch(() => {});
     router.push(`/post/${round.id}` as any);
+  };
+
+  // Inline comment composer (comment directly from the feed).
+  const [composerOpen, setComposerOpen] = React.useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [commentMentions, setCommentMentions] = useState<string[]>([]);
+  const [posting, setPosting] = useState(false);
+  const [commentCount, setCommentCount] = useState<number>(round.comment_count || 0);
+
+  const openComposer = () => {
+    Haptics.selectionAsync().catch(() => {});
+    setComposerOpen(true);
+  };
+
+  const closeComposer = () => {
+    setComposerOpen(false);
+    setCommentText('');
+    setCommentMentions([]);
+  };
+
+  const submitComment = async () => {
+    const body = commentText.trim();
+    if (!body || posting) return;
+    setPosting(true);
+    try {
+      await api.addComment(round.id, body, commentMentions);
+      setCommentCount((n) => n + 1);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      closeComposer();
+    } catch (e: any) {
+      Alert.alert('Failed to comment', e?.message || 'Please try again.');
+    } finally {
+      setPosting(false);
+    }
   };
 
   const newAchievements: Achievement[] = Array.isArray(round.new_achievements)
@@ -254,15 +290,63 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
         <Pressable
           testID={`round-card-comment-${round.id}`}
           hitSlop={8}
-          onPress={openPost}
+          onPress={openComposer}
           style={styles.actionBtn}
         >
           <Ionicons name="chatbubble-outline" size={15} color={colors.onSurface} />
-          <Text style={styles.actionText}>{round.comment_count}</Text>
+          <Text style={styles.actionText}>{commentCount}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
         <Text style={styles.subFooter}>{round.weather || ''}</Text>
       </View>
+
+      {/* Comment composer — lets you reply straight from the feed */}
+      <Modal
+        visible={composerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={closeComposer}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={closeComposer} />
+        <KeyboardAvoidingView behavior="padding" style={styles.modalKav} pointerEvents="box-none">
+          <View testID={`comment-composer-${round.id}`} style={styles.composerSheet}>
+            <View style={styles.composerHandle} />
+            <View style={styles.composerHeader}>
+              <Text style={styles.composerTitle} numberOfLines={1}>
+                Reply to {author.display_name || 'this post'}
+              </Text>
+              <Pressable testID={`comment-composer-close-${round.id}`} onPress={closeComposer} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.muted} />
+              </Pressable>
+            </View>
+            <MentionInput
+              testID={`comment-composer-input-${round.id}`}
+              value={commentText}
+              onChangeText={setCommentText}
+              onMentionsChange={setCommentMentions}
+              placeholder="Add a comment — try @name"
+              style={styles.composerInput}
+              multiline
+              autoFocus
+            />
+            <Pressable
+              testID={`comment-composer-send-${round.id}`}
+              onPress={submitComment}
+              disabled={!commentText.trim() || posting}
+              style={[styles.composerSend, (!commentText.trim() || posting) && { opacity: 0.5 }]}
+            >
+              {posting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="send" size={16} color="#fff" />
+                  <Text style={styles.composerSendText}>Post comment</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Pressable>
   );
 }
@@ -420,4 +504,48 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
   actionText: { fontSize: 13, color: colors.onSurface, fontWeight: '700' },
   subFooter: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalKav: { flex: 1, justifyContent: 'flex-end' },
+  composerSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  composerHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginBottom: spacing.xs,
+  },
+  composerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  composerTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.onSurface },
+  composerInput: {
+    minHeight: 90,
+    maxHeight: 160,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 15,
+    color: colors.onSurface,
+    textAlignVertical: 'top',
+  },
+  composerSend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.pill,
+    paddingVertical: 14,
+    ...shadow.soft,
+  },
+  composerSendText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });
