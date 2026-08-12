@@ -11,6 +11,8 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
@@ -46,6 +48,7 @@ type Props = {
  * the parent's picked/unpicked state without racing against onChangeText.
  */
 export function CourseAutocomplete({ value, selected, onSelect, onChangeText, placeholder, testID }: Props) {
+  useTheme();
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<CourseHit[]>([]);
   const [loading, setLoading] = useState(false);
@@ -350,7 +353,7 @@ function AddCourseModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrap: { gap: 6 },
   label: { fontSize: 13, fontWeight: '700', color: colors.onSurface, letterSpacing: 0.2 },
   inputWrap: {
@@ -438,4 +441,4 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
   modalCancel: { paddingHorizontal: spacing.md, paddingVertical: 12 },
   modalCancelText: { fontSize: 15, fontWeight: '700', color: colors.muted },
-});
+}));

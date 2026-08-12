@@ -13,9 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 export default function FriendsList() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [friends, setFriends] = useState<any[] | null>(null);
@@ -170,7 +173,7 @@ export default function FriendsList() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   topBar: {
@@ -256,4 +259,4 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   emptyText: { fontSize: 13, color: colors.muted, textAlign: 'center', maxWidth: 260 },
-});
+}));

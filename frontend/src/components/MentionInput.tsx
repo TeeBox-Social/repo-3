@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 type Suggestion = { id: string; display_name: string; avatar?: string | null };
@@ -52,6 +54,7 @@ export function MentionInput({
   dropdownPlacement = 'top',
   ...rest
 }: Props) {
+  useTheme();
   const inputRef = useRef<TextInput | null>(null);
   const [caret, setCaret] = useState(0);
   const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
@@ -228,7 +231,7 @@ export function MentionInput({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrapper: {
     width: '100%',
     position: 'relative',
@@ -326,4 +329,4 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarText: { color: colors.onBrandTertiary, fontWeight: '800', fontSize: 11 },
-});
+}));

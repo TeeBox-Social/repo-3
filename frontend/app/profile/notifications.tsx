@@ -13,6 +13,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api, DEFAULT_NOTIFICATION_PREFS, NotificationPrefs } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -69,6 +71,7 @@ const ROWS: PrefRow[] = [
 ];
 
 export default function NotificationSettings() {
+  useTheme();
   const router = useRouter();
   const { user, setUser } = useAuth();
   const [prefs, setPrefs] = useState<NotificationPrefs>(
@@ -168,7 +171,7 @@ export default function NotificationSettings() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -224,4 +227,4 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 14, fontWeight: '800', color: colors.onSurface },
   rowDesc: { fontSize: 12, color: colors.muted, marginTop: 2, lineHeight: 16 },
-});
+}));

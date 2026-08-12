@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { api, ImportJob } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
@@ -41,6 +43,7 @@ const COUNTRIES: { code: string; name: string; flag: string }[] = [
 ];
 
 export default function AdminCoursesScreen() {
+  useTheme();
   const router = useRouter();
   const { user } = useAuth();
   const [stats, setStats] = useState<{ total_courses: number; by_source: Record<string, number> } | null>(null);
@@ -463,7 +466,7 @@ function PendingCourseRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: {
     flex: 1,
@@ -619,4 +622,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

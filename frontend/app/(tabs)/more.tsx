@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { useAuth } from '@/src/auth-context';
 
 type RowProps = {
@@ -37,6 +39,7 @@ function MenuRow({ icon, iconBg, iconColor, title, subtitle, onPress, testID, hi
 }
 
 export default function MoreScreen() {
+  useTheme();
   const router = useRouter();
   const { user, signOut } = useAuth();
 
@@ -127,7 +130,7 @@ export default function MoreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
   headerTitle: { fontSize: 30, fontWeight: '800', color: colors.onSurface },
@@ -159,4 +162,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   logoutText: { fontSize: 15, fontWeight: '800', color: colors.error },
-});
+}));

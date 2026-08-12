@@ -4,11 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { api } from '@/src/api';
 
 export default function ResetPassword() {
+  useTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string }>();
   const token = useMemo(() => (typeof params.token === 'string' ? params.token : ''), [params.token]);
@@ -142,7 +145,7 @@ export default function ResetPassword() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: {
@@ -166,4 +169,4 @@ const styles = StyleSheet.create({
   sub: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: spacing.md },
   err: { color: colors.error, fontWeight: '700', fontSize: 13 },
   eyeBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-});
+}));

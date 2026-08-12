@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Props = {
   value: number; // 0..5, 0.25 step
   onChange: (v: number) => void;
@@ -15,6 +17,7 @@ type Props = {
  * Tap or drag across the 5-star row to pick a rating in 0.25 increments.
  */
 export function StarPicker({ value, onChange, size = 40, testID }: Props) {
+  useTheme();
   const [width, setWidth] = useState(0);
   const lastRef = React.useRef<number>(value);
 
@@ -80,7 +83,7 @@ export function StarPicker({ value, onChange, size = 40, testID }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrap: { alignSelf: 'flex-start', position: 'relative' },
   row: { flexDirection: 'row', gap: 4 },
   overlay: { position: 'absolute', top: 0, left: 0, height: '100%', overflow: 'hidden' },
@@ -97,4 +100,4 @@ const styles = StyleSheet.create({
   valueText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   valueSuffix: { color: '#BBE9C9', fontSize: 12, fontWeight: '700' },
   hint: { color: colors.muted, fontSize: 12, fontStyle: 'italic' },
-});
+}));

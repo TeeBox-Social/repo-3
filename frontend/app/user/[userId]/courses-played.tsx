@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 type Row = {
@@ -26,6 +28,7 @@ type Row = {
 };
 
 export default function CoursesPlayed() {
+  useTheme();
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -123,7 +126,7 @@ export default function CoursesPlayed() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -173,4 +176,4 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   meta: { fontSize: 12, color: colors.muted, marginTop: 2 },
   location: { fontSize: 11, color: colors.muted, marginTop: 1 },
-});
+}));

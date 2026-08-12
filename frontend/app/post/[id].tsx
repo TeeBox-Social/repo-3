@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { MentionInput } from '@/src/components/MentionInput';
 import { MentionText } from '@/src/components/MentionText';
@@ -25,6 +27,7 @@ import { HoleGrid } from '@/src/components/HoleGrid';
 import { useAuth } from '@/src/auth-context';
 
 export default function PostDetail() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -301,6 +304,20 @@ export default function PostDetail() {
               </View>
             </View>
 
+            {round.like_count > 0 ? (
+              <Pressable
+                testID="post-like-preview"
+                onPress={() => setLikersSource({ kind: 'round', roundId: String(id) })}
+                hitSlop={6}
+                style={styles.likePreview}
+              >
+                <Ionicons name="heart" size={12} color={colors.brandSecondary} />
+                <Text style={styles.likePreviewText} numberOfLines={1}>
+                  {likePreview(round.like_names, round.like_count)}
+                </Text>
+              </Pressable>
+            ) : null}
+
             <View style={styles.commentsSection}>
               <Text style={styles.sectionTitle}>Comments</Text>
               {comments && comments.length > 0 ? (
@@ -387,6 +404,15 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <Text style={styles.miniStatLabel}>{label}</Text>
     </View>
   );
+}
+
+function likePreview(names: string[] | undefined, count: number): string {
+  const list = names || [];
+  const first = list[0] || 'Someone';
+  if (count <= 1) return `Liked by ${first}`;
+  const second = list[1];
+  if (count === 2 && second) return `Liked by ${first} and ${second}`;
+  return `Liked by ${first} and ${count - 1} others`;
 }
 
 function CommentRow({
@@ -574,7 +600,7 @@ function CommentRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   hero: { height: 280 },
@@ -693,6 +719,8 @@ const styles = StyleSheet.create({
   likeGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   likeCountBtn: { paddingVertical: 2 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  likePreview: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -spacing.xs, marginBottom: spacing.xs },
+  likePreviewText: { fontSize: 13, color: colors.muted, fontWeight: '700', flex: 1 },
   actionText: { fontSize: 14, fontWeight: '700', color: colors.onSurface },
   commentsSection: { gap: spacing.md, marginTop: spacing.md },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.onSurface },
@@ -785,4 +813,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.soft,
   },
-});
+}));

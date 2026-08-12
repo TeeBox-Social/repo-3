@@ -3,6 +3,8 @@ import { View, StyleSheet, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Props = {
   value: number; // 0..5, 0.25 step
   size?: number;
@@ -21,6 +23,7 @@ export function StarDisplay({
   emptyColor = colors.borderStrong,
   style,
 }: Props) {
+  useTheme();
   const clamped = Math.max(0, Math.min(5, value));
   const pct = (clamped / 5) * 100;
   return (
@@ -43,8 +46,8 @@ export function StarDisplay({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrap: { position: 'relative', alignSelf: 'flex-start' },
   row: { flexDirection: 'row', gap: 2 },
   overlay: { position: 'absolute', top: 0, left: 0, height: '100%', overflow: 'hidden' },
-});
+}));

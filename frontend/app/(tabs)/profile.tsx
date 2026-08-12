@@ -14,6 +14,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 import { TBButton } from '@/src/components/TBButton';
@@ -22,6 +24,7 @@ import { WishlistList } from '@/src/components/WishlistList';
 import { NotificationBell } from '@/src/components/NotificationBell';
 
 export default function Profile() {
+  useTheme();
   const router = useRouter();
   const { user, signOut, refresh } = useAuth();
   const [profile, setProfile] = useState<any>(null);
@@ -434,7 +437,7 @@ function iconFor(key: string): any {
   }
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.sm },
   errorTitle: { fontSize: 17, fontWeight: '800', color: colors.onSurface, marginTop: spacing.sm },
@@ -605,4 +608,4 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   emptySub: { fontSize: 13, color: colors.muted, textAlign: 'center' },
-});
+}));

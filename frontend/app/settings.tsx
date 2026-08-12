@@ -1,14 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { useAuth } from '@/src/auth-context';
-import { storage } from '@/src/utils/storage';
 
-const APPEARANCE_KEY = 'appearance';
 type Appearance = 'light' | 'dark' | 'system';
 const OPTIONS: { value: Appearance; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'light', label: 'Light', icon: 'sunny-outline' },
@@ -17,20 +17,13 @@ const OPTIONS: { value: Appearance; label: string; icon: keyof typeof Ionicons.g
 ];
 
 export default function SettingsScreen() {
+  const { preference, setPreference } = useTheme();
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const [appearance, setAppearance] = useState<Appearance>('system');
+  const appearance = preference;
 
-  useEffect(() => {
-    (async () => {
-      const saved = (await storage.getItem<string>(APPEARANCE_KEY, 'system')) as Appearance;
-      if (saved === 'light' || saved === 'dark' || saved === 'system') setAppearance(saved);
-    })();
-  }, []);
-
-  const chooseAppearance = async (value: Appearance) => {
-    setAppearance(value);
-    await storage.setItem(APPEARANCE_KEY, value);
+  const chooseAppearance = (value: Appearance) => {
+    setPreference(value);
   };
 
   const confirmLogout = () => {
@@ -125,7 +118,7 @@ export default function SettingsScreen() {
               })}
             </View>
             <Text style={styles.caption}>
-              Your preference is saved. Full dark theme rolls out in an upcoming update.
+              Switch between Light, Dark, or match your device with System.
             </Text>
           </View>
         </View>
@@ -150,7 +143,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -212,4 +205,4 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   logoutText: { fontSize: 15, fontWeight: '800', color: colors.error },
-});
+}));

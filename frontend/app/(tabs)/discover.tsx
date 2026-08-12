@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { NotificationBell } from '@/src/components/NotificationBell';
 
@@ -28,6 +30,7 @@ type LocationState =
   | { status: 'error' };
 
 export default function Discover() {
+  useTheme();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('courses');
   const [q, setQ] = useState('');
@@ -404,7 +407,7 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   headerSafe: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.divider },
   header: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md, gap: spacing.md },
@@ -538,4 +541,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   nearbyBannerText: { fontSize: 12, fontWeight: '700', color: colors.brandPrimary, letterSpacing: 0.3 },
-});
+}));

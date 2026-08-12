@@ -14,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, IMAGES, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { GoogleSignInButton } from '@/src/components/GoogleSignInButton';
@@ -75,6 +77,7 @@ async function safeSaveRemembered(email: string, password: string, remember: boo
 }
 
 export default function SignIn() {
+  useTheme();
   const router = useRouter();
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
@@ -244,7 +247,7 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   hero: { justifyContent: 'flex-end' },
   heroCopy: { padding: spacing.xl, paddingBottom: HERO_COPY_BOTTOM, gap: spacing.sm },
@@ -301,4 +304,4 @@ const styles = StyleSheet.create({
     borderColor: colors.brandPrimary,
   },
   rememberText: { fontSize: 14, color: colors.onSurface, fontWeight: '600' },
-});
+}));

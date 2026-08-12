@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, TextInput } from 'react-native';
 import { colors, radius, spacing } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Props = {
   scores: string[]; // length 18
   pars?: number[]; // length 18
@@ -12,6 +14,7 @@ type Props = {
 const DEFAULT_PARS = [4, 4, 3, 5, 4, 3, 4, 4, 5, 4, 3, 4, 5, 4, 4, 3, 5, 4];
 
 export function HoleGrid({ scores, pars, onChangeScore, readOnly }: Props) {
+  useTheme();
   const usedPars = pars && pars.length === 18 ? pars : DEFAULT_PARS;
   const front = Array.from({ length: 9 }, (_, i) => i);
   const back = Array.from({ length: 9 }, (_, i) => i + 9);
@@ -97,7 +100,7 @@ function LegendPill({ color, label }: { color: string; label: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrap: { gap: spacing.sm },
   row: { flexDirection: 'row', gap: 4, alignItems: 'stretch' },
   rowLabelCell: {
@@ -158,4 +161,4 @@ const styles = StyleSheet.create({
   },
   legendDot: { width: 10, height: 10, borderRadius: radius.pill },
   legendText: { fontSize: 11, color: colors.onSurfaceTertiary, fontWeight: '700' },
-});
+}));

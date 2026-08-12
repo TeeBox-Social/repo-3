@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 
 const BENEFITS: { icon: keyof typeof Ionicons.glyphMap; title: string; sub: string }[] = [
@@ -15,6 +17,7 @@ const BENEFITS: { icon: keyof typeof Ionicons.glyphMap; title: string; sub: stri
 ];
 
 export default function PremiumScreen() {
+  useTheme();
   const router = useRouter();
 
   return (
@@ -77,7 +80,7 @@ export default function PremiumScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -133,4 +136,4 @@ const styles = StyleSheet.create({
   priceUnit: { fontSize: 15, fontWeight: '700', color: colors.muted },
   priceNote: { fontSize: 12, color: colors.muted, marginTop: spacing.xs, textAlign: 'center' },
   footnote: { fontSize: 12, color: colors.muted, textAlign: 'center', lineHeight: 18 },
-});
+}));

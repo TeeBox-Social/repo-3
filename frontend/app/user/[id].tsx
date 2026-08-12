@@ -13,12 +13,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { RoundCard } from '@/src/components/RoundCard';
 import { TBButton } from '@/src/components/TBButton';
 import { WishlistList } from '@/src/components/WishlistList';
 
 export default function UserDetail() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
@@ -232,7 +235,7 @@ function StatCell({
   return <View style={styles.statCell}>{inner}</View>;
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   cover: { height: 220, backgroundColor: colors.surfaceInverse },
@@ -306,4 +309,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyTitle: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
-});
+}));

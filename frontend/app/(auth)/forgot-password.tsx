@@ -4,11 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { api } from '@/src/api';
 
 export default function ForgotPassword() {
+  useTheme();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -101,7 +104,7 @@ export default function ForgotPassword() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: {
@@ -124,4 +127,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: '800', color: colors.onSurface },
   sub: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: spacing.md },
   err: { color: colors.error, fontWeight: '700', fontSize: 13 },
-});
+}));

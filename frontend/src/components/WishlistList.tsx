@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Item = {
   course_name: string;
   city?: string | null;
@@ -20,6 +22,7 @@ type Props = {
 };
 
 export function WishlistList({ items, onRemove, emptyLabel = 'Nothing on the wishlist yet.', testID }: Props) {
+  useTheme();
   const router = useRouter();
   if (!items || items.length === 0) {
     return (
@@ -72,7 +75,7 @@ export function WishlistList({ items, onRemove, emptyLabel = 'Nothing on the wis
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   row: { gap: spacing.md, paddingRight: spacing.lg },
   card: {
     width: 160,
@@ -115,4 +118,4 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   emptyText: { fontSize: 13, color: colors.muted, fontStyle: 'italic' },
-});
+}));

@@ -4,7 +4,10 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { colors, radius } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 export default function TabsLayout() {
+  useTheme();
   return (
     <Tabs
       screenOptions={{
@@ -68,7 +71,7 @@ export default function TabsLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   tabBar: Platform.select({
     web: {
       position: 'absolute',
@@ -120,4 +123,4 @@ const styles = StyleSheet.create({
     },
   }) as any,
   logIconActive: { backgroundColor: colors.brandDeep },
-});
+}));

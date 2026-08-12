@@ -4,12 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { api } from '@/src/api';
 
 type Status = 'loading' | 'success' | 'error' | 'missing';
 
 export default function VerifyEmail() {
+  useTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string }>();
   const token = typeof params.token === 'string' ? params.token : '';
@@ -77,7 +80,7 @@ export default function VerifyEmail() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   body: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   iconWrap: {
@@ -91,4 +94,4 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 26, fontWeight: '800', color: colors.onSurface, textAlign: 'center' },
   sub: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20, marginTop: spacing.sm },
-});
+}));

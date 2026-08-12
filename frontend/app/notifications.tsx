@@ -12,6 +12,8 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 type Notification = {
@@ -49,6 +51,7 @@ function iconForType(type: string): { icon: any; color: string } {
 }
 
 export default function NotificationsScreen() {
+  useTheme();
   const router = useRouter();
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,7 +134,7 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -183,4 +186,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandPrimary,
     marginTop: 6,
   },
-});
+}));

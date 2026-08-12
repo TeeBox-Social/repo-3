@@ -11,12 +11,15 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { GoogleSignInButton } from '@/src/components/GoogleSignInButton';
 import { TBInput } from '@/src/components/TBInput';
 import { useAuth } from '@/src/auth-context';
 
 export default function SignUp() {
+  useTheme();
   const router = useRouter();
   const { signUp } = useAuth();
   const [email, setEmail] = useState('');
@@ -149,7 +152,7 @@ export default function SignUp() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   topBar: {
     paddingTop: 56,
@@ -184,4 +187,4 @@ const styles = StyleSheet.create({
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.divider },
   dividerText: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
-});
+}));

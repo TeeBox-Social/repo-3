@@ -127,6 +127,20 @@ async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Option
     
     author = await users_col.find_one({"id": r["user_id"]}, {"_id": 0, "hashed_password": 0, "email": 0})
     r.pop("_id", None)
+
+    # Small "Liked by X and N others" preview — up to 2 most-recent liker names.
+    like_names: list[str] = []
+    if like_count:
+        recent_ids: list[str] = []
+        async for lk in likes_col.find({"round_id": round_id}, {"_id": 0, "user_id": 1}).sort("created_at", -1).limit(2):
+            if lk.get("user_id"):
+                recent_ids.append(lk["user_id"])
+        if recent_ids:
+            name_by_id: dict = {}
+            async for u in users_col.find({"id": {"$in": recent_ids}}, {"_id": 0, "id": 1, "display_name": 1}):
+                name_by_id[u["id"]] = u.get("display_name")
+            like_names = [name_by_id[i] for i in recent_ids if name_by_id.get(i)]
+
     return {
         **r,
         "author": {
@@ -136,6 +150,7 @@ async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Option
             "avatar": author.get("avatar"),
         } if author else None,
         "like_count": like_count,
+        "like_names": like_names,
         "comment_count": comment_count,
         "liked_by_me": liked_by_me,
         "new_achievements": r.get("new_achievements") or [],

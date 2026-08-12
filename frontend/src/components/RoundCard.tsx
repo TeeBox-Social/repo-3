@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { MentionText } from '@/src/components/MentionText';
 import { MentionInput } from '@/src/components/MentionInput';
 import { LikersSheet } from '@/src/components/LikersSheet';
@@ -48,6 +50,7 @@ function iconFor(key?: string): any {
 }
 
 export function RoundCard({ round, onLike, onDeleted }: Props) {
+  useTheme();
   const router = useRouter();
   const { user } = useAuth();
   const postType: 'round' | 'text' | 'lfg' = round.post_type || 'round';
@@ -315,6 +318,23 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
         <Text style={styles.subFooter}>{round.weather || ''}</Text>
       </View>
 
+      {round.like_count > 0 ? (
+        <Pressable
+          testID={`round-card-like-preview-${round.id}`}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setLikersOpen(true);
+          }}
+          hitSlop={6}
+          style={styles.likePreview}
+        >
+          <Ionicons name="heart" size={11} color={colors.brandSecondary} />
+          <Text style={styles.likePreviewText} numberOfLines={1}>
+            {likePreview(round.like_names, round.like_count)}
+          </Text>
+        </Pressable>
+      ) : null}
+
       {/* Comment composer — lets you reply straight from the feed */}
       <Modal
         visible={composerOpen}
@@ -375,6 +395,15 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
   );
 }
 
+function likePreview(names: string[] | undefined, count: number): string {
+  const list = names || [];
+  const first = list[0] || 'Someone';
+  if (count <= 1) return `Liked by ${first}`;
+  const second = list[1];
+  if (count === 2 && second) return `Liked by ${first} and ${second}`;
+  return `Liked by ${first} and ${count - 1} others`;
+}
+
 function timeAgo(iso?: string) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -386,7 +415,7 @@ function timeAgo(iso?: string) {
   return d.toLocaleDateString();
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   card: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
@@ -529,6 +558,8 @@ const styles = StyleSheet.create({
   likeGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   likeCountBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   actionText: { fontSize: 13, color: colors.onSurface, fontWeight: '700' },
+  likePreview: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -spacing.xs },
+  likePreviewText: { fontSize: 12.5, color: colors.muted, fontWeight: '700', flex: 1 },
   subFooter: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   modalKav: { flex: 1, justifyContent: 'flex-end' },
@@ -574,4 +605,4 @@ const styles = StyleSheet.create({
     ...shadow.soft,
   },
   composerSendText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-});
+}));

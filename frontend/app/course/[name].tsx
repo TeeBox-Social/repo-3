@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
@@ -43,6 +45,7 @@ function inBucket(hc: number | null | undefined, f: Filter): boolean {
 }
 
 export default function CourseDetail() {
+  useTheme();
   const { name } = useLocalSearchParams<{ name: string }>();
   const router = useRouter();
   const courseName = decodeURIComponent(String(name || ''));
@@ -321,7 +324,7 @@ function ReviewCard({ r, courseAvg }: { r: any; courseAvg: number | null }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   hero: { minHeight: 260 },
   heroTop: { paddingHorizontal: spacing.lg },
@@ -461,4 +464,4 @@ const styles = StyleSheet.create({
   reviewMetaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
   reviewMeta: { fontSize: 11, color: colors.muted, fontWeight: '700', letterSpacing: 0.4 },
   reviewText: { fontSize: 14, color: colors.onSurface, lineHeight: 20 },
-});
+}));

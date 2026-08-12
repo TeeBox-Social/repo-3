@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only Playwright verification of Likers Preview + App-wide Dark Mode on the Expo web preview. All features working as specified. Login (reese@teebox.demo/password123) succeeded. Feed shows the 'round-card-like-preview-<id>' line only on cards with like_count>0 (1 of 4 seed cards) with text 'Liked by Kurt Hafeken' - matches expected format. Tapping the preview line and the like-count button both open the likers-sheet correctly. On post detail (/post/<id>), the 'post-like-preview' element is present and opens the likers-sheet. Dark mode: Selecting 'Dark' in Settings > Appearance turned the entire app dark; verified computed root background = rgb(15,21,18) (#0F1512, dark surface) on Settings, More, Feed, Discover, Log, Profile (self), Notifications, Achievements, Course detail (Cypress Ridge), another user's profile (/user/747a...), and Post detail. No white/blank screens, no red-box crashes, no page errors. Reverting to 'Light' correctly restored rgb(253,252,248) (#FDFCF8) across app. Selecting 'System' did not crash. Regression: login, tab navigation (Feed/Discover/Log/More), opening a post, and the likers sheet all still function. Minor console warnings observed (non-blocking): RN Web deprecation of 'shadow*' and 'props.pointerEvents' - repeated many times per navigation.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "global (console)",
+        "issues": [
+          "RN Web deprecation warning: 'shadow*' style props are deprecated. Use boxShadow. Emitted repeatedly. src/theme.ts already uses Platform.select for shadow, so the leaked shadow* usage is elsewhere - grep for shadowColor/shadowOpacity/shadowOffset/shadowRadius outside theme.ts.",
+          "RN Web deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Present in RoundCard.tsx modalKav (Modal + KeyboardAvoidingView pointerEvents='box-none') and likely a few other Modals - migrate to style.pointerEvents."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "Deprecated shadow* style props",
+        "issue": "Console warning 'shadow*' style props are deprecated. Use 'boxShadow' - fires on every navigation. src/theme.ts is safe (Platform.select). Search for stray shadowColor/shadowOffset/shadowOpacity/shadowRadius on web outside the shared theme."
+      },
+      {
+        "component": "Deprecated props.pointerEvents",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents'. e.g. /app/frontend/src/components/RoundCard.tsx:346 (KeyboardAvoidingView pointerEvents='box-none'). Move to style={{ pointerEvents: 'box-none' }}."
+      },
+      {
+        "component": "Expo SDK version mismatch",
+        "issue": "expo start reports expo@54.0.35 vs expected ~54.0.36. Non-blocking but should be aligned via `npx expo install --check` or bump in package.json."
+      }
+    ]
+  },
+  "test_report_links": ["/tmp/dark_* screenshots captured inline during runs; no persistent artifacts saved"],
+  "action_items": [
+    "Optional cleanup: migrate remaining shadow* style props to Platform.select/boxShadow to silence RN Web deprecation warning.",
+    "Optional cleanup: move Modal/KeyboardAvoidingView pointerEvents prop into style.pointerEvents.",
+    "Optional: run `npx expo install --check` in /app/frontend to align expo@54.0.36."
+  ],
+  "critical_code_review_comments": [
+    "theme.ts Proxy palette and makeThemedSheet re-resolve on scheme change; ThemeProvider calls setActiveScheme BEFORE children render - the implementation is correct and confirmed working across 11 screens.",
+    "RoundCard.tsx correctly hides the preview when like_count===0 (line 321) and correctly opens LikersSheet from both the preview line (line 322) and the like-count button (line 295).",
+    "LikersSheet.tsx uses testID='likers-sheet' + testID='likers-close' - both worked in tests."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A", "frontend": "100%" },
+  "seed_data_creation": "No new seed data created. Used existing demo seed (Kurt Hafeken liking Reese's Cypress Ridge round).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both features (Likers Preview line + Dark Mode) are fully working on web preview. Root dark bg is rgb(15,21,18); root light bg is rgb(253,252,248). The 'Header notifications' bell testID is 'header-notifications' (feed header). Direct URL /notifications, /achievements, /settings, /user/<id>, /course/<name> all work. Settings back button uses history so open Settings via More>App Settings (more-settings) to have a back stack, or navigate directly and use router elsewhere.",
+  "rca_of_issue": "N/A - no bugs found for reported features."
+}

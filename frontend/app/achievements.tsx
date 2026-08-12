@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -45,6 +47,7 @@ function iconFor(key?: string): any {
 }
 
 export default function AchievementsScreen() {
+  useTheme();
   const { user } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<{ total: number; achievements: Achievement[] } | null>(null);
@@ -188,7 +191,7 @@ function AchievementRow({ a }: { a: Achievement }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   header: {
@@ -300,4 +303,4 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   emptySub: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 },
-});
+}));

@@ -13,6 +13,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type LikersSource =
   | { kind: 'round'; roundId: string }
   | { kind: 'comment'; roundId: string; commentId: string };
@@ -39,6 +41,7 @@ export function LikersSheet({
   fetchRoundLikers,
   fetchCommentLikers,
 }: Props) {
+  useTheme();
   const router = useRouter();
   const [users, setUsers] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -133,7 +136,7 @@ function LikerRow({ user, onPress }: { user: any; onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     position: 'absolute',
@@ -187,4 +190,4 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.onBrandTertiary, fontWeight: '800', fontSize: 15 },
   name: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   sub: { fontSize: 13, color: colors.muted, marginTop: 2 },
-});
+}));

@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, ActivityIndicator, ViewStyle, TextStyle } 
 import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing, shadow } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Props = {
   label: string;
   onPress?: () => void;
@@ -26,6 +28,7 @@ export function TBButton({
   testID,
   icon,
 }: Props) {
+  useTheme();
   const isDisabled = disabled || loading;
   const bg =
     variant === 'primary'
@@ -70,7 +73,7 @@ export function TBButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   base: {
     minHeight: 54,
     borderRadius: radius.pill,
@@ -85,4 +88,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-});
+}));

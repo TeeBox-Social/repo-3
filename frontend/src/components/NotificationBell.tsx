@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 /**
@@ -11,6 +13,7 @@ import { api } from '@/src/api';
  * stays accurate across Feed / Discover / Log / Profile.
  */
 export function NotificationBell({ color = colors.onSurface, testID }: { color?: string; testID?: string }) {
+  useTheme();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
 
@@ -46,7 +49,7 @@ export function NotificationBell({ color = colors.onSurface, testID }: { color?:
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   bellBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   bellBadge: {
     position: 'absolute',
@@ -61,4 +64,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   bellBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
-});
+}));

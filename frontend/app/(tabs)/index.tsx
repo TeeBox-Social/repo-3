@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 import { RoundCard } from '@/src/components/RoundCard';
 import { FeedNativeAd } from '@/src/components/FeedNativeAd';
@@ -30,6 +32,7 @@ const FILTERS: { key: FeedFilter; label: string; icon: keyof typeof Ionicons.gly
 ];
 
 export default function Feed() {
+  useTheme();
   const router = useRouter();
   const { user } = useAuth();
   const [rounds, setRounds] = useState<any[] | null>(null);
@@ -290,7 +293,7 @@ function VerifyBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface },
   headerGlass: {
@@ -419,4 +422,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B5A00',
   },
   verifyBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-});
+}));

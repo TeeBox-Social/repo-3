@@ -4,6 +4,8 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { useAuth } from '@/src/auth-context';
 
 // Emergent-managed Google OAuth entry URL. Handles the entire Google consent
@@ -34,6 +36,7 @@ function extractSessionId(url: string | null): string | null {
 }
 
 export function GoogleSignInButton({ onError, testID, label = 'Continue with Google' }: Props) {
+  useTheme();
   const { signInWithGoogleSession } = useAuth();
   const [busy, setBusy] = useState(false);
 
@@ -89,7 +92,7 @@ export function GoogleSignInButton({ onError, testID, label = 'Continue with Goo
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   btn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -105,4 +108,4 @@ const styles = StyleSheet.create({
   glyphWrap: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   glyph: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 15, fontWeight: '700', color: '#1F1F1F', letterSpacing: 0.2 },
-});
+}));

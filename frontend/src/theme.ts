@@ -1,7 +1,7 @@
 // TeeBox design tokens - mirror of design_guidelines.json for RN.
 import { Platform } from 'react-native';
 
-export const colors = {
+const lightPalette = {
   surface: '#FDFCF8',
   onSurface: '#1A1D1C',
   surfaceSecondary: '#FFFFFF',
@@ -26,6 +26,70 @@ export const colors = {
   divider: '#E4E3DB',
   muted: '#6B7161',
 };
+
+export type Colors = typeof lightPalette;
+
+// Dark palette — same token keys so any StyleSheet built from the palette works
+// unchanged. Values chosen for a warm, high-contrast fairway-green dark theme.
+export const darkColors: Colors = {
+  surface: '#0F1512',
+  onSurface: '#F1F3EF',
+  surfaceSecondary: '#18201B',
+  onSurfaceSecondary: '#F1F3EF',
+  surfaceTertiary: '#222B24',
+  onSurfaceTertiary: '#C4CBC2',
+  surfaceInverse: '#0A2314',
+  onSurfaceInverse: '#FFFFFF',
+  brand: '#2FA95A',
+  brandPrimary: '#2FA95A',
+  brandDeep: '#1C7A3E',
+  onBrandPrimary: '#06130B',
+  brandSecondary: '#F59E0B',
+  onBrandSecondary: '#1A1204',
+  brandTertiary: '#12351F',
+  onBrandTertiary: '#9DE9BB',
+  success: '#22C55E',
+  warning: '#F59E0B',
+  error: '#F87171',
+  border: '#2C352E',
+  borderStrong: '#3C463E',
+  divider: '#2C352E',
+  muted: '#98A093',
+};
+
+export const lightColors: Colors = lightPalette;
+
+// Mutable active-theme pointer. `setActiveScheme` is called by the ThemeProvider
+// whenever the resolved scheme changes, BEFORE children re-render, so the Proxies
+// below always resolve to the correct palette during render.
+const _active: { scheme: 'light' | 'dark'; palette: Colors } = {
+  scheme: 'light',
+  palette: lightPalette,
+};
+
+export function setActiveScheme(scheme: 'light' | 'dark') {
+  _active.scheme = scheme;
+  _active.palette = scheme === 'dark' ? darkColors : lightPalette;
+}
+
+// `colors` resolves each property at ACCESS time against the active palette.
+// Inline usages (e.g. <Icon color={colors.muted} />) therefore update on the
+// next render after a theme change — no per-file edits required.
+export const colors: Colors = new Proxy({} as Colors, {
+  get: (_t, prop) => (_active.palette as any)[prop as any],
+  set: () => true,
+}) as Colors;
+
+// Build a StyleSheet that swaps between pre-computed light/dark variants at
+// property-access time. Usage:
+//   const styles = makeThemedSheet((colors) => StyleSheet.create({ ... }));
+export function makeThemedSheet<T extends Record<string, any>>(factory: (c: Colors) => T): T {
+  const light = factory(lightPalette);
+  const dark = factory(darkColors);
+  return new Proxy({} as T, {
+    get: (_t, prop) => (_active.scheme === 'dark' ? dark : light)[prop as any],
+  }) as T;
+}
 
 export const spacing = {
   xs: 4,

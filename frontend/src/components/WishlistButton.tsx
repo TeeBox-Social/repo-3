@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
 
 type Props = {
@@ -12,6 +14,7 @@ type Props = {
 
 /** Toggleable wishlist pill for Course Detail. */
 export function WishlistButton({ courseName, onChange }: Props) {
+  useTheme();
   const [status, setStatus] = useState<'idle' | 'loading' | 'busy'>('loading');
   const [on, setOn] = useState(false);
 
@@ -71,7 +74,7 @@ export function WishlistButton({ courseName, onChange }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -87,4 +90,4 @@ const styles = StyleSheet.create({
   text: { fontWeight: '800', fontSize: 13 },
   textOff: { color: colors.brandDeep },
   textOn: { color: '#fff' },
-});
+}));

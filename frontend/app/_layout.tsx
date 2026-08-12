@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { AuthProvider, useAuth } from '@/src/auth-context';
+import { ThemeProvider, useTheme } from '@/src/theme-context';
 import { initAdMob } from '@/src/components/FeedNativeAd';
 
 LogBox.ignoreAllLogs(true);
@@ -25,6 +26,7 @@ try {
 
 function ProtectedRouter() {
   const { user, loading, signInWithGoogleSession } = useAuth();
+  const { colors } = useTheme();
   const segments = useSegments();
   const router = useRouter();
   const navState = useRootNavigationState();
@@ -103,7 +105,7 @@ function ProtectedRouter() {
   }, []);
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFCF8' } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="post/[id]" options={{ presentation: 'card' }} />
@@ -165,12 +167,19 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <StatusBar barStyle="dark-content" />
-          <AuthProvider>
-            <ProtectedRouter />
-          </AuthProvider>
+          <ThemeProvider>
+            <ThemedStatusBar />
+            <AuthProvider>
+              <ProtectedRouter />
+            </AuthProvider>
+          </ThemeProvider>
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );
+}
+
+function ThemedStatusBar() {
+  const { scheme } = useTheme();
+  return <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />;
 }

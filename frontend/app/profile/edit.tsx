@@ -15,12 +15,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
 export default function ProfileEdit() {
+  useTheme();
   const router = useRouter();
   const { user, setUser } = useAuth();
   const [displayName, setDisplayName] = useState(user?.display_name || '');
@@ -177,7 +180,7 @@ export default function ProfileEdit() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   topBar: {
     flexDirection: 'row',
@@ -231,4 +234,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

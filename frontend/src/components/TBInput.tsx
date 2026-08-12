@@ -2,6 +2,8 @@ import React from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { colors, radius, spacing } from '@/src/theme';
 
+import { makeThemedSheet } from '@/src/theme';
+import { useTheme } from '@/src/theme-context';
 type Props = TextInputProps & {
   label?: string;
   error?: string;
@@ -10,6 +12,7 @@ type Props = TextInputProps & {
 };
 
 export function TBInput({ label, error, containerStyle, rightAdornment, style, ...rest }: Props) {
+  useTheme();
   return (
     <View style={[styles.wrap, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
@@ -26,7 +29,7 @@ export function TBInput({ label, error, containerStyle, rightAdornment, style, .
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   wrap: { width: '100%' },
   label: {
     fontSize: 13,
@@ -53,4 +56,4 @@ const styles = StyleSheet.create({
   },
   errorBorder: { borderColor: colors.error },
   errorText: { color: colors.error, marginTop: 4, fontSize: 12, fontWeight: '600' },
-});
+}));
