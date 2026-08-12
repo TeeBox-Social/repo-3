@@ -1,0 +1,27 @@
+{
+  "summary": "Tested new OpenGolfAPI nationwide course integration (backend + frontend). All 11 pytest cases pass. Frontend verified: Discover Courses search dedup, Nationwide badge (correctly absent for pre-existing seed/osm-matched courses like Bandon Dunes/Pebble Beach, correctly present for brand-new opengolfapi rows like 'Shadow Creek Golf Course'), Course Detail fact sheet (hero Par/yds/type chip, Course info card with tappable website/phone links, Tees horizontal cards, Hole-by-hole table with Front9/Back9 toggle + correct totals, Best-months climate chips correctly absent when best_months is empty), dark mode rendering of all new components (no unstyled/white flashes), graceful absence of fact sheet for a course without an OpenGolfAPI match (Cypress Ridge, no crash), and round-logging course picker nationwide fallback. No bugs found.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_opengolfapi_integration.py",
+    "/app/test_reports/pytest/iter27_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "opengolf_client.py and routers/courses.py dedup/backfill logic verified correct end-to-end: _cache_opengolf_compact uses $setOnInsert for source/verified so pre-existing seed/osm docs matched by exact name keep their original source (no false 'Nationwide' badge), while still backfilling city/region/lat/lng/par/external_id onto the existing doc so the visible row and future detail fetch benefit.",
+    "_ensure_course_details correctly gates on external_id presence and returns the course unmodified (all rich fields null/empty) for courses without a match, matching CourseFactSheet.tsx's `if (!holes.length && !tees.length) return null;` early-return so no empty boxes render.",
+    "Note: because the local courses_col already has ~12k OSM-imported courses providing dense coverage, most common searches (e.g. Bandon Dunes, Pebble Beach) resolve to local seed/osm docs by exact name and never surface an opengolfapi-sourced NEW row/badge — this is correct per the described dedup logic, not a bug. Verified the badge does render for genuinely novel matches (e.g. 'Shadow Creek Golf Course')."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter27_opengolfapi_integration.py"],
+  "success_rate": { "backend": "100% (11/11)", "frontend": "100%" },
+  "seed_data_creation": "No new seed data created; relied on live OpenGolfAPI caching triggered during test runs for course names: Bandon Dunes, Bandon Dunes Golf Resort, Pebble Beach Golf Links, Chambers Bay, Augusta National, Whistling Straits, Erin Hills, Shadow Creek Golf Course.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "OpenGolfAPI integration is fully additive and working: backend dedup/backfill, nearby geo-radius fallback, course-search picker fallback, and rich course-detail fact sheet (par/yardage/tees/holes/climate/architect/website/phone) all verified via pytest and Playwright on web preview. Dark mode confirmed for CourseFactSheet.tsx components. Regression check passed for course reviews, wishlist button, round-logging course picker, and Discover golfers tab (not deeply re-tested per instructions, but navigation/rendering confirmed clean). To reproduce a genuinely-new opengolfapi-sourced row + Nationwide badge for future tests, search Discover Courses for 'Shadow Creek' (returns 'Shadow Creek Golf Course', North Las Vegas NV, source=opengolfapi) rather than Bandon Dunes/Pebble Beach which already match dense local OSM seed data.",
+  "rca_of_issue": "N/A - no bugs found for this feature."
+}

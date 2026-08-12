@@ -371,21 +371,29 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
             <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
           </View>
         ) : null}
-        {typeof course.distance_km === 'number' ? (
-          <View style={styles.distancePill}>
-            <Ionicons name="navigate" size={10} color={colors.brandPrimary} />
-            <Text style={styles.distanceText}>
-              {(() => {
-                const mi = course.distance_km * 0.621371;
-                if (mi < 0.1) {
-                  // Sub-tenth-mile → show feet for a friendly close-range readout.
-                  return `${Math.round(mi * 5280)} ft away`;
-                }
-                return `${mi.toFixed(mi < 10 ? 1 : 0)} mi away`;
-              })()}
-            </Text>
-          </View>
-        ) : null}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+          {typeof course.distance_km === 'number' ? (
+            <View style={styles.distancePill}>
+              <Ionicons name="navigate" size={10} color={colors.brandPrimary} />
+              <Text style={styles.distanceText}>
+                {(() => {
+                  const mi = course.distance_km * 0.621371;
+                  if (mi < 0.1) {
+                    // Sub-tenth-mile → show feet for a friendly close-range readout.
+                    return `${Math.round(mi * 5280)} ft away`;
+                  }
+                  return `${mi.toFixed(mi < 10 ? 1 : 0)} mi away`;
+                })()}
+              </Text>
+            </View>
+          ) : null}
+          {course.source === 'opengolfapi' ? (
+            <View style={styles.nationwidePill} testID={`discover-course-nationwide-${course.course_name}`}>
+              <Ionicons name="globe-outline" size={10} color={colors.brandSecondary} />
+              <Text style={styles.nationwideText}>Nationwide</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.rowSub} numberOfLines={1}>
           {course.play_count > 0
             ? `${course.play_count} play${course.play_count > 1 ? 's' : ''}`
@@ -504,6 +512,18 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
     marginTop: 4,
   },
   distanceText: { fontSize: 11, fontWeight: '800', color: colors.brandPrimary },
+  nationwidePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  nationwideText: { fontSize: 11, fontWeight: '800', color: colors.brandSecondary },
   nearbyCard: {
     flexDirection: 'row',
     alignItems: 'center',

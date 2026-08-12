@@ -25,6 +25,7 @@ import { RoundCard } from '@/src/components/RoundCard';
 import { StarPicker } from '@/src/components/StarPicker';
 import { StarDisplay } from '@/src/components/StarDisplay';
 import { WishlistButton } from '@/src/components/WishlistButton';
+import { CourseFactSheet } from '@/src/components/CourseFactSheet';
 
 type Filter = 'all' | 'low' | 'mid' | 'high';
 
@@ -177,6 +178,16 @@ export default function CourseDetail() {
                     <Text style={styles.locText}>{locationLabel}</Text>
                   </View>
                 ) : null}
+                {info?.par ? (
+                  <View style={styles.locPill}>
+                    <Ionicons name="golf-outline" size={13} color="#DCFCE7" />
+                    <Text style={styles.locText}>
+                      Par {info.par}
+                      {info?.total_yardage ? ` · ${info.total_yardage} yds` : ''}
+                      {info?.course_type ? ` · ${info.course_type}` : ''}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.actionsRow}>
                 <Pressable
@@ -194,6 +205,8 @@ export default function CourseDetail() {
           </View>
 
           <View style={styles.body}>
+            <CourseFactSheet info={info} />
+
             <Text style={styles.sectionTitle}>Write a review</Text>
             <StarPicker value={rating} onChange={setRating} testID="course-star-picker" />
             <TBInput
