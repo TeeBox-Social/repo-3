@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "teebox",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.teeboxsocial.app",
