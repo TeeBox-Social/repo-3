@@ -270,6 +270,8 @@ export const api = {
       city?: string | null;
       region?: string | null;
       country?: string | null;
+      par?: number | null;
+      num_holes?: number | null;
       distance_km: number;
       play_count: number;
       review_count: number;
@@ -290,6 +292,7 @@ export const api = {
       region?: string | null;
       country?: string | null;
       par?: number | null;
+      num_holes?: number | null;
       verified: boolean;
       submitted_by_me: boolean;
     }>>(`/courses/search?q=${encodeURIComponent(q)}`),

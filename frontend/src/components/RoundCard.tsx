@@ -222,7 +222,7 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
               {round.course_name}
             </Text>
             <Text style={styles.courseMeta} numberOfLines={1}>
-              {`${round.holes_played} holes \u00b7 Par ${round.par}`}
+              {`${round.holes_played} holes${round.nine ? ` (${round.nine === 'front' ? 'Front 9' : 'Back 9'})` : ''} \u00b7 Par ${round.par}`}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={colors.muted} />
@@ -247,6 +247,26 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
             </Text>
           </View>
         </View>
+      ) : null}
+
+      {/* Where an LFG post is playing, if the author tagged a course */}
+      {isLfg && round.course_name ? (
+        <Pressable
+          testID={`round-card-course-${round.id}`}
+          onPress={openCourse}
+          style={styles.courseBlock}
+        >
+          <View style={styles.courseIcon}>
+            <Ionicons name="location-outline" size={18} color={colors.brandPrimary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.courseName} numberOfLines={1}>
+              {round.course_name}
+            </Text>
+            <Text style={styles.courseMeta} numberOfLines={1}>Tap to view course</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+        </Pressable>
       ) : null}
 
       {/* Newly unlocked achievements */}

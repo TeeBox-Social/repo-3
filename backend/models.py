@@ -33,6 +33,7 @@ class RoundIn(BaseModel):
     total_score: Optional[int] = Field(None, ge=0, le=200)  # RECOMMENDATION #3: Add bounds
     par: Optional[int] = Field(72, ge=27, le=90)
     holes_played: Optional[int] = 18
+    nine: Optional[str] = Field(default=None, pattern="^(front|back)$")
     fairways_hit: Optional[int] = None
     greens_in_regulation: Optional[int] = None
     putts: Optional[int] = None
@@ -54,6 +55,7 @@ class RoundUpdate(BaseModel):
     total_score: Optional[int] = Field(None, ge=0, le=200)  # RECOMMENDATION #3: Add bounds
     par: Optional[int] = Field(None, ge=27, le=90)
     holes_played: Optional[int] = None
+    nine: Optional[str] = Field(default=None, pattern="^(front|back)$")
     fairways_hit: Optional[int] = None
     greens_in_regulation: Optional[int] = None
     putts: Optional[int] = None

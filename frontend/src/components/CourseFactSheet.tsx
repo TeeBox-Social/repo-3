@@ -70,9 +70,15 @@ export function CourseFactSheet({ info }: { info: any }) {
 
   const yardageKey = useMemo(() => pickHoleYardageKey(holes), [holes]);
 
-  const frontNine = holes.filter((h) => h.number <= 9);
-  const backNine = holes.filter((h) => h.number > 9);
-  const shown = holesTab === 'front' ? frontNine : backNine;
+  // Some low-completeness upstream records pad hole-by-hole data to 18
+  // entries even for a genuinely 9-hole course — trust the authoritative
+  // hole-count field over array length and only ever show that course's
+  // real 9 holes, with no Front/Back split (there isn't one).
+  const nativeNine = info?.num_holes === 9;
+  const displayHoles = nativeNine ? holes.slice(0, 9) : holes;
+  const frontNine = displayHoles.filter((h) => h.number <= 9);
+  const backNine = displayHoles.filter((h) => h.number > 9);
+  const shown = nativeNine ? displayHoles : holesTab === 'front' ? frontNine : backNine;
   const shownTotal = shown.reduce((sum, h) => sum + (h.par || 0), 0);
   const shownYds = shown.reduce((sum, h) => sum + ((h.yardages || {})[yardageKey] || 0), 0);
 
@@ -136,20 +142,22 @@ export function CourseFactSheet({ info }: { info: any }) {
         <View>
           <View style={styles.holesHeaderRow}>
             <Text style={styles.sectionTitle}>Hole-by-hole</Text>
-            <View style={styles.holesToggle}>
-              {(['front', 'back'] as const).map((k) => (
-                <Pressable
-                  key={k}
-                  testID={`course-holes-${k}`}
-                  onPress={() => setHolesTab(k)}
-                  style={[styles.holesToggleBtn, holesTab === k && styles.holesToggleBtnActive]}
-                >
-                  <Text style={[styles.holesToggleText, holesTab === k && styles.holesToggleTextActive]}>
-                    {k === 'front' ? 'Front 9' : 'Back 9'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            {!nativeNine ? (
+              <View style={styles.holesToggle}>
+                {(['front', 'back'] as const).map((k) => (
+                  <Pressable
+                    key={k}
+                    testID={`course-holes-${k}`}
+                    onPress={() => setHolesTab(k)}
+                    style={[styles.holesToggleBtn, holesTab === k && styles.holesToggleBtnActive]}
+                  >
+                    <Text style={[styles.holesToggleText, holesTab === k && styles.holesToggleTextActive]}>
+                      {k === 'front' ? 'Front 9' : 'Back 9'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
           <View style={styles.holesTable}>
             <View style={styles.holesRowHeader}>

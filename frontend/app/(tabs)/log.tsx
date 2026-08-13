@@ -45,9 +45,11 @@ export default function LogRound() {
   const [postType, setPostType] = useState<'round' | 'text' | 'lfg'>('round');
   const [lookingFor, setLookingFor] = useState('');
   const [meetupDate, setMeetupDate] = useState('');  const [courseSelected, setCourseSelected] = useState(false);
+  const [courseDetail, setCourseDetail] = useState<any>(null);
   const [totalScore, setTotalScore] = useState('');
   const [par, setPar] = useState('72');
   const [holes, setHoles] = useState('18');
+  const [nine, setNine] = useState<'front' | 'back'>('front');
   const [fairways, setFairways] = useState('');
   const [gir, setGir] = useState('');
   const [putts, setPutts] = useState('');
@@ -56,6 +58,45 @@ export default function LogRound() {
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // True once the user hand-edits Par themselves — stops our auto-calculation
+  // from overwriting their custom value on every course/holes/nine change.
+  const parTouchedRef = React.useRef(false);
+
+  // A course is a "native nine" when we know for certain it's only a 9-hole
+  // loop (no meaningful front/back split exists for it). We trust the
+  // authoritative hole-COUNT field over hole-by-hole array length, since some
+  // low-completeness upstream records pad `holes` with a generic 18-entry
+  // template even for genuinely 9-hole courses.
+  const isNativeNine = courseDetail?.num_holes === 9;
+
+  const computeEffectivePar = useCallback(
+    (detail: any, holesMode: string, nineVal: 'front' | 'back'): number | null => {
+      const holesArr: any[] = detail?.holes || [];
+      if (holesMode === '18') {
+        if (holesArr.length >= 18) return holesArr.reduce((s, h) => s + (h.par || 0), 0);
+        return detail?.par ?? null;
+      }
+      // 9 holes requested
+      if (detail?.num_holes === 9) return detail?.par ?? null;
+      if (holesArr.length >= 18) {
+        const subset = holesArr.filter((h) => (nineVal === 'back' ? h.number > 9 : h.number <= 9));
+        if (subset.length) return subset.reduce((s: number, h: any) => s + (h.par || 0), 0);
+      }
+      if (holesArr.length === 9) return holesArr.reduce((s, h) => s + (h.par || 0), 0);
+      if (detail?.par) return Math.round(detail.par / 2);
+      return null;
+    },
+    [],
+  );
+
+  const applyAutoPar = useCallback(
+    (detail: any, holesMode: string, nineVal: 'front' | 'back') => {
+      if (parTouchedRef.current) return;
+      const computed = computeEffectivePar(detail, holesMode, nineVal);
+      setPar(computed != null ? String(computed) : holesMode === '9' ? '36' : '72');
+    },
+    [computeEffectivePar],
+  );
 
   const applyPrefill = useCallback(() => {
     if (params.course) {
@@ -80,6 +121,18 @@ export default function LogRound() {
   useEffect(() => {
     applyPrefill();
   }, [applyPrefill]);
+
+  // Auto-recompute Par whenever the selected course's detail, hole-count, or
+  // front/back-9 choice changes — unless the user has since hand-edited Par.
+  useEffect(() => {
+    applyAutoPar(courseDetail, holes, nine);
+  }, [courseDetail, holes, nine, applyAutoPar]);
+
+  // A course we know for certain is only a 9-hole loop (no front/back split
+  // makes sense) — force the Holes toggle to match once its detail loads.
+  useEffect(() => {
+    if (courseDetail?.num_holes === 9) setHoles('9');
+  }, [courseDetail]);
 
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -106,9 +159,12 @@ export default function LogRound() {
   const resetForm = () => {
     setCourseName('');
     setCourseSelected(false);
+    setCourseDetail(null);
     setTotalScore('');
     setPar('72');
     setHoles('18');
+    setNine('front');
+    parTouchedRef.current = false;
     setFairways('');
     setGir('');
     setPutts('');
@@ -152,13 +208,15 @@ export default function LogRound() {
         basePayload.total_score = Number(totalScore);
         basePayload.par = Number(par) || (holes === '9' ? 36 : 72);
         basePayload.holes_played = Number(holes) || 18;
+        basePayload.nine = holes === '9' && !isNativeNine ? nine : null;
         basePayload.fairways_hit = fairways ? Number(fairways) : null;
         basePayload.greens_in_regulation = gir ? Number(gir) : null;
         basePayload.putts = putts ? Number(putts) : null;
         basePayload.hole_scores = [];
       } else if (postType === 'lfg') {
-        // LFG posts no longer require a course tag — the feed presents them
-        // as a stand-alone "Looking for Group" call-out.
+        // LFG posts don't require a course tag, but users can optionally
+        // attach one so others know where to meet.
+        if (courseName.trim()) basePayload.course_name = courseName.trim();
         if (meetupDate.trim()) basePayload.meetup_date = meetupDate.trim();
         const lf = Number(lookingFor);
         if (Number.isFinite(lf) && lf > 0) basePayload.looking_for_count = lf;
@@ -245,11 +303,12 @@ export default function LogRound() {
             </View>
           ) : null}
 
-          {postType === 'round' ? (
+          {postType === 'round' || postType === 'lfg' ? (
             <CourseAutocomplete
               testID="log-course"
               value={courseName}
               selected={courseSelected}
+              placeholder={postType === 'lfg' ? 'Where are you playing? (optional)' : undefined}
               onChangeText={(t) => {
                 setCourseName(t);
                 setCourseSelected(false);
@@ -257,8 +316,14 @@ export default function LogRound() {
               onSelect={(c) => {
                 setCourseName(c.name);
                 setCourseSelected(!!c.name);
-                if (c.par && (!par || par === '72')) setPar(String(c.par));
+                if (c.name) {
+                  parTouchedRef.current = false;
+                  setCourseDetail({ par: c.par ?? null, num_holes: c.num_holes ?? null, holes: [] });
+                } else {
+                  setCourseDetail(null);
+                }
               }}
+              onDetail={(detail) => setCourseDetail(detail)}
             />
           ) : null}
 
@@ -274,14 +339,7 @@ export default function LogRound() {
                     <Pressable
                       key={h}
                       testID={`log-holes-${h}`}
-                      onPress={() => {
-                        setHoles(h);
-                        // When switching hole-count, auto-flip the par default
-                        // to keep it sensible (36 for 9, 72 for 18). Only do
-                        // this if the user hasn't hand-typed a custom par.
-                        if (h === '9' && (!par || par === '72' || par === '36')) setPar('36');
-                        if (h === '18' && (!par || par === '36' || par === '72')) setPar('72');
-                      }}
+                      onPress={() => setHoles(h)}
                       style={[styles.holePill, active && styles.holePillActive]}
                     >
                       <Text style={[styles.holePillText, active && styles.holePillTextActive]}>
@@ -296,7 +354,10 @@ export default function LogRound() {
               label="Par"
               testID="log-par"
               value={par}
-              onChangeText={setPar}
+              onChangeText={(t) => {
+                parTouchedRef.current = true;
+                setPar(t);
+              }}
               keyboardType="number-pad"
               containerStyle={{ flex: 1 }}
             />
@@ -310,6 +371,29 @@ export default function LogRound() {
               containerStyle={{ flex: 1 }}
             />
           </View>
+
+          {holes === '9' && !isNativeNine ? (
+            <View>
+              <Text style={styles.dropdownLabel}>Which nine?</Text>
+              <View style={styles.holePickerRow}>
+                {(['front', 'back'] as const).map((n) => {
+                  const active = nine === n;
+                  return (
+                    <Pressable
+                      key={n}
+                      testID={`log-nine-${n}`}
+                      onPress={() => setNine(n)}
+                      style={[styles.holePill, active && styles.holePillActive]}
+                    >
+                      <Text style={[styles.holePillText, active && styles.holePillTextActive]}>
+                        {n === 'front' ? 'Front 9' : 'Back 9'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.row}>
             <TBInput
@@ -378,28 +462,32 @@ export default function LogRound() {
             />
           </View>
 
-          <Text style={styles.sectionLabel}>Photos ({photos.length}/3)</Text>
-          <View style={styles.photoRow}>
-            {photos.map((p, i) => (
-              <Pressable
-                key={i}
-                testID={`log-photo-${i}`}
-                onPress={() => removePhoto(i)}
-                style={styles.photoThumb}
-              >
-                <Image source={{ uri: p }} style={styles.photoImg} contentFit="cover" />
-                <View style={styles.photoRemove}>
-                  <Ionicons name="close" size={14} color="#fff" />
-                </View>
-              </Pressable>
-            ))}
-            {photos.length < 3 ? (
-              <Pressable testID="log-add-photo" onPress={pickImage} style={styles.photoAdd}>
-                <Ionicons name="camera-outline" size={22} color={colors.brandPrimary} />
-                <Text style={styles.photoAddText}>Add</Text>
-              </Pressable>
-            ) : null}
-          </View>
+          {postType !== 'lfg' ? (
+            <>
+              <Text style={styles.sectionLabel}>Photos ({photos.length}/3)</Text>
+              <View style={styles.photoRow}>
+                {photos.map((p, i) => (
+                  <Pressable
+                    key={i}
+                    testID={`log-photo-${i}`}
+                    onPress={() => removePhoto(i)}
+                    style={styles.photoThumb}
+                  >
+                    <Image source={{ uri: p }} style={styles.photoImg} contentFit="cover" />
+                    <View style={styles.photoRemove}>
+                      <Ionicons name="close" size={14} color="#fff" />
+                    </View>
+                  </Pressable>
+                ))}
+                {photos.length < 3 ? (
+                  <Pressable testID="log-add-photo" onPress={pickImage} style={styles.photoAdd}>
+                    <Ionicons name="camera-outline" size={22} color={colors.brandPrimary} />
+                    <Text style={styles.photoAddText}>Add</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          ) : null}
 
           {err ? <Text style={styles.errText}>{err}</Text> : null}
 
@@ -464,7 +552,7 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   segBtnActive: { backgroundColor: colors.brandPrimary },
   segText: { fontSize: 12, fontWeight: '800', color: colors.onSurface },
   segTextActive: { color: '#fff' },
-  form: { padding: spacing.xl, gap: spacing.md, paddingBottom: 140 },
+  form: { padding: spacing.xl, gap: spacing.md, paddingBottom: 220 },
   row: { flexDirection: 'row', gap: spacing.sm },
   sectionLabel: {
     fontSize: 13,

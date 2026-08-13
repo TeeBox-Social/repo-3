@@ -1,0 +1,39 @@
+{
+  "summary": "Tested the White Pines name-collision fix, Log-tab nearby/auto-par/Front9-Back9 rework, and LFG course-tagging + photo removal. Backend: 11/11 new pytest cases pass (collision fix verified, Pebble Beach/Bandon Dunes regression intact, nine field persistence/validation, LFG optional course). Frontend: nearby-courses graceful location fallback, course search/autocomplete, auto-par calc (front-9 vs back-9 real sums, verified against an unevenly-split course 'Inverness Club' 35/36), White Pines correctly forced to native-9 with no Front/Back selector, par-touched-sticky behavior, LFG course-optional + no-photo-section, LFG feed card course row all verified working. Found ONE CRITICAL frontend interaction bug (Save round button unclickable when Holes=9 is selected, due to bottom tab-bar overlap) and ONE data-consistency bug on the course detail page (White Pines still shows a fabricated 'Back 9' of padded/fake holes despite being a real 9-hole course).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/courses/White%20Pines%20Golf%20Course", "issue": "holes array (and insights: total_par=72, par_4_count=16, etc.) still contains a fabricated 18-entry template (holes 10-18 are padded placeholders with par=4, no yardage/handicap) even though num_holes=9 correctly reflects a real 9-hole course. This comes from the upstream OpenGolfAPI detail response itself (opengolf_client.get_course_detail), not the collision-guard fix, but it means /api/courses/{name} returns internally-inconsistent tees/holes/insights data for native-9-hole courses. Backend does not truncate/flag holes[9:] for num_holes===9 courses."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "log.tsx (Save round / Post / Post LFG button)", "issue": "CRITICAL: When Holes=9 is selected on the Round tab, the extra 'Which nine?' Front9/Back9 row pushes the submit button down far enough that its lower ~28px overlaps the fixed bottom tab bar's hit-region. document.elementFromPoint() at the button's center resolves to the 'tab-log' tab-bar link, not the button, so tapping 'Save round' silently does nothing (no network request fires, no error shown) until the user manually scrolls the form up a bit. Reproduced 3x consistently with both force-click and native mouse click; confirmed NOT present when Holes=18 (shorter form, no overlap) by the same test. This directly affects the newly-added Front9/Back9 selector feature.", "testID": "log-submit", "priority": "CRITICAL"},
+      {"component": "CourseFactSheet.tsx (course detail page, Hole-by-hole section)", "issue": "The Front9/Back9 toggle and hole table render unconditionally whenever holes.length > 0, without checking the course's num_holes. For a real 9-hole course like White Pines Golf Course (Swanton, OH), tapping 'Back 9' shows 9 fake rows (holes 10-18, par 4 each) with '—' for HCP/Yds — misleading since this course has no back nine. log.tsx already has an isNativeNine guard (num_holes===9) for this exact upstream data-quality quirk; CourseFactSheet.tsx does not apply the same guard.", "testID": "course-holes-back", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_collision_fix_and_nine.py",
+    "/app/test_reports/pytest/iter28_results.xml"
+  ],
+  "action_items": [
+    "Fix log.tsx layout/z-index so the submit button's tap target never overlaps the fixed bottom tab bar, regardless of form height (e.g. increase KeyboardAwareScrollView bottom padding further when the Front9/Back9 row is shown, or ensure the tab bar sits behind scrollable content in stacking order). This is a functional blocker for logging any 9-hole round without first manually scrolling.",
+    "Apply the same num_holes===9 'native nine' guard used in log.tsx's isNativeNine to CourseFactSheet.tsx so the Hole-by-hole Back9 toggle (and ideally the Front9/Back9 toggle entirely) is hidden/adjusted for courses OpenGolfAPI reports as 9-hole but pads with an 18-hole template.",
+    "Optional: consider truncating/nulling holes[9:] server-side in _ensure_course_details when num_holes===9 so all consumers of GET /api/courses/{name} (not just the two frontend screens that happen to check num_holes) get consistent data."
+  ],
+  "critical_code_review_comments": [
+    "_cache_opengolf_compact / _ensure_course_details collision-guard logic (NAME_COLLISION_GUARD_KM=40km) verified correct: White Pines Golf Course now consistently resolves to the Swanton, OH record (lat/lng/phone/website/par/num_holes all internally consistent with that specific course) rather than the Massachusetts course of the same name.",
+    "RoundIn/RoundUpdate 'nine' field validation (pattern ^(front|back)$) and create_round's server-side enforcement (nine only kept when post_type=='round' and holes_played==9) both verified correct via pytest, including the invalid-value 422 case.",
+    "log.tsx's computeEffectivePar correctly derives the front-9/back-9 par sums from real hole-by-hole data rather than total/2 — verified against 'Inverness Club' which has an intentionally uneven 35/36 front/back split."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter28_collision_fix_and_nine.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "~90% (2 bugs found: 1 critical interaction bug, 1 data-consistency display bug)"},
+  "seed_data_creation": "None persisted; all TEST_-prefixed rounds/LFG posts created during testing were deleted via cleanup calls after verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "White Pines Golf Course (Swanton, OH) collision bug is fixed and verified at the API level. The remaining Front9/Back9 hole-table inconsistency on the course detail page is a display-only issue stemming from OpenGolfAPI's own padded 18-hole template for some 9-hole courses — reproducible on any course where num_holes=9 but holes.length=18 (White Pines is a known repro case). The Save-round-button/tab-bar overlap bug is reproducible by: Log tab -> Round -> pick any 18-hole course -> tap Holes='9' (adds the Which-nine row) -> without scrolling, tap Save round -> nothing happens (click intercepted by bottom tab bar). Scrolling the form up by ~150-250px before tapping works around it. Both LFG (course-optional, no-photos-section, feed course-row) and the Front9/Back9 auto-par recompute logic itself are fully working correctly.",
+  "rca_of_issue": "Bug 1 (submit button unclickable at Holes=9): The KeyboardAwareScrollView's contentContainerStyle paddingBottom (140) is fixed regardless of form height; when the 'Which nine?' row adds ~70px, the Save-round button's natural resting y-position (before any user scroll) falls within the last ~30px of the viewport, which is where the app's fixed bottom tab bar visually/hit-region sits. The tab bar intercepts the tap. Mitigation: increase bottom padding conditionally, or make the tab bar pointer-events pass-through in the region behind an overlapping sibling, or ensure the form's natural scroll position already accounts for the tallest possible state (9-hole+Front/Back) rather than the default (18-hole) state.\nBug 2 (fake Back9 for real 9-hole course): CourseFactSheet.tsx has no equivalent of log.tsx's `isNativeNine = courseDetail?.num_holes === 9` guard; it treats any holes.length>0 as sufficient to render the Front9/Back9 toggle table, so upstream data padding (OpenGolfAPI returning an 18-hole holes_data template for some 9-hole courses) leaks straight into the UI as a fabricated back nine."
+}

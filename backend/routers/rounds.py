@@ -46,6 +46,7 @@ async def create_round(data: RoundIn, user=Depends(get_current_user)):
         "total_score": data.total_score,
         "par": data.par or 72,
         "holes_played": data.holes_played or 18,
+        "nine": data.nine if post_type == "round" and data.holes_played == 9 else None,
         "fairways_hit": data.fairways_hit,
         "greens_in_regulation": data.greens_in_regulation,
         "putts": data.putts,

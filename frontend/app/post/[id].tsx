@@ -176,9 +176,18 @@ export default function PostDetail() {
               ) : null}
             </SafeAreaView>
             <View style={styles.heroCopy}>
-              <Text style={styles.heroCourse}>
-                {round.course_name || (isLfg ? 'Looking for Group' : 'Post')}
-              </Text>
+              <Pressable
+                testID="post-hero-course"
+                disabled={!round.course_name}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  router.push(`/course/${encodeURIComponent(round.course_name)}` as any);
+                }}
+              >
+                <Text style={styles.heroCourse}>
+                  {round.course_name || (isLfg ? 'Looking for Group' : 'Post')}
+                </Text>
+              </Pressable>
               <Text style={styles.heroDate}>
                 {new Date(round.date || round.created_at).toLocaleDateString(undefined, {
                   month: 'long',
@@ -225,7 +234,9 @@ export default function PostDetail() {
                 <View style={styles.scoreDivider} />
                 <View style={styles.scoreCell}>
                   <Text style={styles.scoreValBig}>{round.holes_played}</Text>
-                  <Text style={styles.scoreLbl}>Holes</Text>
+                  <Text style={styles.scoreLbl}>
+                    Holes{round.nine ? ` \u00b7 ${round.nine === 'front' ? 'Front' : 'Back'}` : ''}
+                  </Text>
                 </View>
                 <View style={styles.scoreDivider} />
                 <View style={styles.scoreCell}>

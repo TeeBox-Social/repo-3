@@ -18,31 +18,71 @@ logger = logging.getLogger(__name__)
 
 # ---- OpenGolfAPI: nationwide (32,700+ US courses) cache-aside integration ----
 DETAILS_TTL_DAYS = 30
+NAME_COLLISION_GUARD_KM = 40  # generic names (e.g. "White Pines Golf Course")
+                               # can exist multiple times nationwide — never
+                               # merge OpenGolfAPI facts onto a course we
+                               # already know is somewhere else entirely.
 
 
 async def _cache_opengolf_compact(c: dict) -> None:
     """Best-effort upsert of a compact OpenGolfAPI search result into our own
     ``courses_col``. Enriches an existing course (matched by exact name) without
     clobbering its ``source``/``verified`` flag; inserts a new verified,
-    nationwide-sourced course otherwise. Never raises."""
+    nationwide-sourced course otherwise. Never raises.
+
+    Guards against nationwide name collisions (e.g. two unrelated real courses
+    both called "White Pines Golf Course"): if the doc we already have on file
+    for this exact name has its own coordinates and they're far from this
+    candidate, we skip entirely rather than risk attaching the wrong
+    ``external_id``/facts to the wrong course. If the identity (external_id)
+    is legitimately changing, we also clear any previously-cached rich detail
+    (tees/holes/climate/etc.) since it belongs to the *old* external_id and
+    would otherwise keep showing stale, mismatched facts.
+    """
     name = (c.get("course_name") or "").strip()
     if not name:
         return
+    clat, clng = c.get("lat"), c.get("lng")
     try:
+        existing = await courses_col.find_one({"name": name}, {"_id": 0, "lat": 1, "lng": 1, "external_id": 1})
+        if existing:
+            elat, elng = existing.get("lat"), existing.get("lng")
+            if elat is not None and elng is not None and clat is not None and clng is not None:
+                if haversine_km(elat, elng, clat, clng) > NAME_COLLISION_GUARD_KM:
+                    logger.warning(
+                        f"opengolf name-collision guard: skipping cache for {name!r} — "
+                        f"match is >{NAME_COLLISION_GUARD_KM}km from the course already on file "
+                        f"(likely a different course sharing this name)"
+                    )
+                    return
         country_iso = c.get("country_iso") or "US"
+        set_fields = {
+            "city": c.get("city"),
+            "region": c.get("state"),
+            "country": "USA" if country_iso == "US" else country_iso,
+            "lat": clat,
+            "lng": clng,
+            "par": c.get("par"),
+            "course_type": c.get("type"),
+            "num_holes": c.get("holes"),
+            "external_id": c.get("id"),
+        }
+        old_external_id = existing.get("external_id") if existing else None
+        new_external_id = c.get("id")
+        if old_external_id and new_external_id and old_external_id != new_external_id:
+            # Identity changed — any cached rich detail was fetched for the
+            # OLD (now-superseded) external_id and must not keep showing.
+            logger.warning(f"opengolf identity change for {name!r}: {old_external_id} -> {new_external_id}; clearing stale detail cache")
+            set_fields.update({
+                "total_yardage": None, "architect": None, "year_built": None,
+                "phone": None, "website": None, "address": None,
+                "tees": [], "holes": [], "climate": {}, "insights": {},
+                "details_synced_at": None, "detail_external_id": None,
+            })
         await courses_col.update_one(
             {"name": name},
             {
-                "$set": {
-                    "city": c.get("city"),
-                    "region": c.get("state"),
-                    "country": "USA" if country_iso == "US" else country_iso,
-                    "lat": c.get("lat"),
-                    "lng": c.get("lng"),
-                    "par": c.get("par"),
-                    "course_type": c.get("type"),
-                    "external_id": c.get("id"),
-                },
+                "$set": set_fields,
                 "$setOnInsert": {
                     "id": str(uuid.uuid4()),
                     "source": "opengolfapi",
@@ -60,24 +100,54 @@ async def _ensure_course_details(course: dict | None) -> dict | None:
     """Lazily fetch + cache full OpenGolfAPI detail (tees, hole-by-hole
     yardages, climate, insights) for a course that carries an ``external_id``.
     Cached for ``DETAILS_TTL_DAYS`` days. Best-effort — a slow/down upstream
-    just means the course renders without the extra facts."""
+    just means the course renders without the extra facts.
+
+    The cache is only trusted if it was fetched for the *current*
+    ``external_id`` (tracked via ``detail_external_id``) — if the identity was
+    corrected since the last fetch, we always re-fetch regardless of TTL. As a
+    second safety net, if the freshly-fetched detail's own coordinates are far
+    from this course's known coordinates, we treat it as a name collision and
+    clear the facts instead of showing data for the wrong real-world course."""
     if not course or not course.get("external_id"):
         return course
+    ext_id = course["external_id"]
     synced = course.get("details_synced_at")
-    if synced and course.get("holes"):
+    if synced and course.get("holes") and course.get("detail_external_id") == ext_id:
         try:
             age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(synced)).days
             if age_days < DETAILS_TTL_DAYS:
                 return course
         except Exception:
             pass
-    detail = await opengolf_client.get_course_detail(course["external_id"])
+    detail = await opengolf_client.get_course_detail(ext_id)
     if not detail:
         return course
+    clat, clng = course.get("lat"), course.get("lng")
+    dlat, dlng = detail.get("lat"), detail.get("lng")
+    if clat is not None and clng is not None and dlat is not None and dlng is not None:
+        if haversine_km(clat, clng, dlat, dlng) > NAME_COLLISION_GUARD_KM:
+            logger.warning(
+                f"opengolf detail mismatch for {course.get('name')!r}: external_id {ext_id} "
+                f"is >{NAME_COLLISION_GUARD_KM}km away from the course's own location — clearing"
+            )
+            clear = {
+                "external_id": None, "detail_external_id": None, "par": course.get("par"),
+                "total_yardage": None, "course_type": course.get("course_type"),
+                "architect": None, "year_built": None, "phone": None, "website": None,
+                "address": None, "tees": [], "holes": [], "climate": {}, "insights": {},
+                "details_synced_at": now_iso(),
+            }
+            try:
+                await courses_col.update_one({"name": course["name"]}, {"$set": clear})
+            except Exception:
+                pass
+            course.update(clear)
+            return course
     update = {
         "par": detail.get("par") or course.get("par"),
         "total_yardage": detail.get("yardage"),
         "course_type": detail.get("type") or course.get("course_type"),
+        "num_holes": detail.get("holes") or course.get("num_holes"),
         "architect": detail.get("architect"),
         "year_built": detail.get("year_built"),
         "phone": detail.get("phone"),
@@ -88,6 +158,7 @@ async def _ensure_course_details(course: dict | None) -> dict | None:
         "climate": detail.get("climate") or {},
         "insights": detail.get("insights") or {},
         "details_synced_at": now_iso(),
+        "detail_external_id": ext_id,
     }
     try:
         await courses_col.update_one({"name": course["name"]}, {"$set": update})
@@ -329,6 +400,8 @@ async def discover_courses_nearby(
                 "country": "USA",
                 "lat": clat,
                 "lng": clng,
+                "par": c.get("par"),
+                "num_holes": c.get("holes"),
                 "source": "opengolfapi",
             }))
         candidates.sort(key=lambda x: x[0])
@@ -350,6 +423,8 @@ async def discover_courses_nearby(
             "country": c.get("country"),
             "lat": c.get("lat"),
             "lng": c.get("lng"),
+            "par": c.get("par"),
+            "num_holes": c.get("num_holes"),
             "distance_km": round(dist, 1),
             "play_count": play_count,
             "review_count": stats.get("count", 0),
@@ -383,6 +458,7 @@ async def course_search(request: Request, q: str = "", limit: int = Query(15, ge
             "region": c.get("region"),
             "country": c.get("country"),
             "par": c.get("par"),
+            "num_holes": c.get("num_holes"),
             "verified": c.get("verified", True),
             "submitted_by_me": c.get("submitted_by") == user["id"],
             "source": c.get("source", "community"),
@@ -413,6 +489,7 @@ async def course_search(request: Request, q: str = "", limit: int = Query(15, ge
                 "region": c.get("state"),
                 "country": "USA",
                 "par": c.get("par"),
+                "num_holes": c.get("holes"),
                 "verified": True,
                 "submitted_by_me": False,
                 "source": "opengolfapi",
@@ -498,6 +575,7 @@ async def get_course(course_name: str, user=Depends(get_current_user)):
         "par": course.get("par") if course else None,
         "total_yardage": course.get("total_yardage") if course else None,
         "course_type": course.get("course_type") if course else None,
+        "num_holes": course.get("num_holes") if course else None,
         "architect": course.get("architect") if course else None,
         "year_built": course.get("year_built") if course else None,
         "phone": course.get("phone") if course else None,
