@@ -1,8 +1,8 @@
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { LogBox, StatusBar } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { LogBox, StatusBar, View, Text, Pressable } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,7 +12,50 @@ import { AuthProvider, useAuth } from '@/src/auth-context';
 import { ThemeProvider, useTheme } from '@/src/theme-context';
 import { initAdMob } from '@/src/components/FeedNativeAd';
 
-LogBox.ignoreAllLogs(true);
+// Keep LogBox on so genuine errors surface — the previous ignoreAllLogs was
+// hiding startup crashes on Expo Go and left users with a blank splash.
+LogBox.ignoreLogs([
+  'shadow* style props',
+  'props.pointerEvents',
+]);
+
+// ---- Emergency error boundary --------------------------------------------
+// If ANYTHING throws in the tree (native module missing, worklet init, etc.)
+// we surface a readable message + a reload prompt instead of leaving the user
+// looking at a blank native splash for 30+ seconds.
+class RootErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { err: Error | null }
+> {
+  state = { err: null as Error | null };
+  static getDerivedStateFromError(err: Error) {
+    return { err };
+  }
+  componentDidCatch(err: Error) {
+    console.warn('[RootErrorBoundary]', err?.message, err?.stack);
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0b1f14', padding: 24, justifyContent: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 12 }}>
+            TeeBox hit a startup error
+          </Text>
+          <Text style={{ color: '#c9e5d3', fontSize: 13, marginBottom: 20 }}>
+            {String(this.state.err?.message || this.state.err)}
+          </Text>
+          <Pressable
+            onPress={() => this.setState({ err: null })}
+            style={{ backgroundColor: '#22c55e', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Retry</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Keep the native splash visible from cold start until icon fonts register.
 // Required because @expo/vector-icons' componentDidMount fallback fires
@@ -126,13 +169,13 @@ function ProtectedRouter() {
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
   // Absolute last-resort escape hatch: if font loading neither resolves nor
-  // errors within 12s (e.g. a hung network on a real device), render anyway so
+  // errors within 4s (e.g. a hung network on a real device), render anyway so
   // the app can never get stuck on the native splash forever. On Expo Go the
   // CDN fonts normally register in well under 2s; on web the map is empty and
   // `loaded` is true on first render.
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 12000);
+    const t = setTimeout(() => setTimedOut(true), 4000);
     return () => clearTimeout(t);
   }, []);
 
@@ -144,6 +187,17 @@ export default function RootLayout() {
   // rejects and the render tree blanks out (the error overlay is suppressed by
   // LogBox.ignoreAllLogs, so the user just sees a white screen).
   const ready = loaded || !!error || timedOut;
+
+  // Hide the native splash UNCONDITIONALLY on mount after a short delay. Even
+  // if `ready` never flips (e.g. font hook wedged), we never want the user
+  // stuck on a black/branded splash screen with no way out — the RN JS tree
+  // below can render its own fallback / sign-in.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (ready) {
@@ -164,18 +218,20 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <ThemedStatusBar />
-            <AuthProvider>
-              <ProtectedRouter />
-            </AuthProvider>
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </KeyboardProvider>
-    </GestureHandlerRootView>
+    <RootErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <KeyboardProvider>
+          <SafeAreaProvider>
+            <ThemeProvider>
+              <ThemedStatusBar />
+              <AuthProvider>
+                <ProtectedRouter />
+              </AuthProvider>
+            </ThemeProvider>
+          </SafeAreaProvider>
+        </KeyboardProvider>
+      </GestureHandlerRootView>
+    </RootErrorBoundary>
   );
 }
 
