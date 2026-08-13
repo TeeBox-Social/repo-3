@@ -2,7 +2,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import * as Linking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useState } from 'react';
-import { LogBox, StatusBar, View, Text, Pressable } from 'react-native';
+import { LogBox, Platform, StatusBar, View, Text, Pressable } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -131,7 +131,11 @@ function ProtectedRouter() {
   // Emergent OAuth redirects back to `<origin>/#session_id=...`. We must
   // process that ONCE on mount before the router bounces us to /sign-in.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // Hard-gate to web. On Hermes/React Native the `window` global IS defined
+    // (polyfilled) but `window.location` is undefined, so `window.location.search`
+    // throws "Cannot read property 'search' of undefined" and crashes app boot.
+    if (Platform.OS !== 'web') return;
+    if (typeof window === 'undefined' || !window.location) return;
     const search = window.location.search || '';
     const hash = window.location.hash || '';
     const combined = search + '&' + hash;
