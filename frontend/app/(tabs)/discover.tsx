@@ -19,6 +19,7 @@ import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
+import { useAuth } from '@/src/auth-context';
 import { NotificationBell } from '@/src/components/NotificationBell';
 
 type Tab = 'golfers' | 'courses';
@@ -47,13 +48,14 @@ export default function Discover() {
       if (tab === 'golfers') {
         setUsers(await api.discoverUsers(q));
       } else {
-        setCourses(await api.discoverCourses(q));
+        const coords = loc.status === 'granted' ? loc.coords : undefined;
+        setCourses(await api.discoverCourses(q, coords));
       }
     } catch {
     } finally {
       setLoading(false);
     }
-  }, [tab, q]);
+  }, [tab, q, loc]);
 
   useEffect(() => {
     const t = setTimeout(load, 250);
@@ -94,11 +96,15 @@ export default function Discover() {
     }
   }, [fetchNearby]);
 
+  // Check the current location-permission status (without prompting) as soon
+  // as the Courses tab is active — if already granted, this both populates
+  // the empty-search "nearby" list AND lets name-search results be sorted
+  // nearest-first, without needing the search box to be empty first.
   useEffect(() => {
-    if (tab === 'courses' && !q && loc.status === 'idle') {
+    if (tab === 'courses' && loc.status === 'idle') {
       checkExistingPermission();
     }
-  }, [tab, q, loc.status, checkExistingPermission]);
+  }, [tab, loc.status, checkExistingPermission]);
 
   const requestLocation = useCallback(async () => {
     setLoc({ status: 'requesting' });
@@ -355,6 +361,8 @@ function UserRow({ user, onPress }: { user: any; onPress: () => void }) {
 }
 
 function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
+  const { user } = useAuth();
+  const isHome = !!user?.home_course && user.home_course === course.course_name;
   const location = [course.city, course.region].filter(Boolean).join(', ');
   return (
     <Pressable testID={`discover-course-${course.course_name}`} onPress={onPress} style={styles.courseRow}>
@@ -372,6 +380,12 @@ function CourseRow({ course, onPress }: { course: any; onPress: () => void }) {
           </View>
         ) : null}
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+          {isHome ? (
+            <View style={styles.homePill} testID={`discover-course-home-${course.course_name}`}>
+              <Ionicons name="home" size={10} color="#fff" />
+              <Text style={styles.homeText}>Home course</Text>
+            </View>
+          ) : null}
           {typeof course.distance_km === 'number' ? (
             <View style={styles.distancePill}>
               <Ionicons name="navigate" size={10} color={colors.brandPrimary} />
@@ -524,6 +538,18 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
     marginTop: 4,
   },
   nationwideText: { fontSize: 11, fontWeight: '800', color: colors.brandSecondary },
+  homePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.brandDeep,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  homeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   nearbyCard: {
     flexDirection: 'row',
     alignItems: 'center',

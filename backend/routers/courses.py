@@ -4,6 +4,7 @@ import math
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -196,7 +197,7 @@ async def _get_review_stats_map(course_names: list[str]) -> dict[str, dict]:
 
 
 @router.get("/discover/courses")
-async def discover_courses(q: str = "", user=Depends(get_current_user)):
+async def discover_courses(q: str = "", lat: Optional[float] = None, lng: Optional[float] = None, user=Depends(get_current_user)):
     safe = safe_query(q)
     pipeline = []
     if safe:
@@ -327,6 +328,15 @@ async def discover_courses(q: str = "", user=Depends(get_current_user)):
             })
 
     out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
+    # ---- Location-first sort: when we know where the user is, the nearest
+    # courses should lead, with popularity (play count) as the tiebreaker.
+    # Falls back to popularity-only sort above when location isn't available. ----
+    if lat is not None and lng is not None:
+        def _dist_key(c):
+            if c.get("lat") is not None and c.get("lng") is not None:
+                return haversine_km(lat, lng, c["lat"], c["lng"])
+            return float("inf")
+        out.sort(key=lambda c: (_dist_key(c), -c["play_count"], c["course_name"].lower()))
     # ---- QUICK WIN #6: Enforce pagination limit before returning ----
     return out[:60]
 
@@ -436,7 +446,14 @@ async def discover_courses_nearby(
 
 @router.get("/courses/search")
 @limiter.limit("120/minute")
-async def course_search(request: Request, q: str = "", limit: int = Query(15, ge=1, le=30), user=Depends(get_current_user)):
+async def course_search(
+    request: Request,
+    q: str = "",
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    limit: int = Query(15, ge=1, le=30),
+    user=Depends(get_current_user),
+):
     safe = safe_query(q, max_len=80)
     if not safe:
         return []
@@ -457,6 +474,8 @@ async def course_search(request: Request, q: str = "", limit: int = Query(15, ge
             "city": c.get("city"),
             "region": c.get("region"),
             "country": c.get("country"),
+            "lat": c.get("lat"),
+            "lng": c.get("lng"),
             "par": c.get("par"),
             "num_holes": c.get("num_holes"),
             "verified": c.get("verified", True),
@@ -488,12 +507,25 @@ async def course_search(request: Request, q: str = "", limit: int = Query(15, ge
                 "city": c.get("city"),
                 "region": c.get("state"),
                 "country": "USA",
+                "lat": c.get("lat"),
+                "lng": c.get("lng"),
                 "par": c.get("par"),
                 "num_holes": c.get("holes"),
                 "verified": True,
                 "submitted_by_me": False,
                 "source": "opengolfapi",
             })
+
+    # ---- Location-first sort: nearest matches lead (name relevance is
+    # already guaranteed by the regex query above); ties broken by whether
+    # the course is locally verified, then alphabetically. Unchanged
+    # (name-match order) when location isn't available. ----
+    if lat is not None and lng is not None:
+        def _dist_key(c):
+            if c.get("lat") is not None and c.get("lng") is not None:
+                return haversine_km(lat, lng, c["lat"], c["lng"])
+            return float("inf")
+        out.sort(key=lambda c: (_dist_key(c), 0 if c.get("verified") else 1, c["name"].lower()))
     return out
 
 

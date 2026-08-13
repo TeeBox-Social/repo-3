@@ -25,6 +25,7 @@ import { RoundCard } from '@/src/components/RoundCard';
 import { StarPicker } from '@/src/components/StarPicker';
 import { StarDisplay } from '@/src/components/StarDisplay';
 import { WishlistButton } from '@/src/components/WishlistButton';
+import { HomeCourseButton } from '@/src/components/HomeCourseButton';
 import { CourseFactSheet } from '@/src/components/CourseFactSheet';
 
 type Filter = 'all' | 'low' | 'mid' | 'high';
@@ -200,6 +201,7 @@ export default function CourseDetail() {
                   <Ionicons name="open-outline" size={14} color={colors.brandDeep} />
                 </Pressable>
                 <WishlistButton courseName={courseName} />
+                <HomeCourseButton courseName={courseName} />
               </View>
             </View>
           </View>

@@ -1,0 +1,32 @@
+{
+  "summary": "Tested 3 new additive features on top of a stable app: (1) fair 18-hole-equivalent scoring average, (2) home-course toggle button, (3) location-first course search sorting. All 11 new backend pytest cases pass. Frontend flows verified end-to-end via browser automation: profile AVG=81 (extrapolated, matches expected (82+79+82)/3), Courses Played list shows Pebble Beach Golf Course Best 82/Avg 82 (extrapolated from raw 41-on-9-holes), HomeCourseButton toggles correctly ('Set as home course' <-> 'Home course') alongside WishlistButton with no layout collision, and Discover tab shows a 'Home course' badge on exactly the matching course row and no others. Light regression on wishlist add/check and course detail endpoint also passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_extrapolation_homecourse_geosort.py",
+    "/app/test_reports/pytest/iter29_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "helpers.extrapolate_18_score and batch_course_par_cache are clean, well-documented pure functions, correctly reused by both get_user (recent 20 rounds) and get_courses_played (all rounds per course) — no duplication.",
+    "HomeCourseButton.tsx mirrors WishlistButton's UX pattern well (optimistic PATCH /auth/me + setUser); silently swallows errors on failure by design, which is acceptable for this low-stakes toggle.",
+    "courses.py discover_courses/course_search location-first sort correctly falls back to popularity/name-only sort when lat/lng are absent (verified no exceptions and no regression on plain name search).",
+    "Minor observation (not a bug, out of scope per review request): discover_courses' per-course 'avg_score'/'best_score' fields (shown in the Discover course-row subtitle, e.g. 'Avg 41 · Best 41' for Pebble Beach in the UI) are still raw/un-extrapolated across all users at that course — only the per-viewing-user endpoints (get_user, get_courses_played) were required to extrapolate per this session's scope, so this is not a defect against the stated requirements, but could look inconsistent to a user who just saw their own profile show an extrapolated 82 for the same course. Flagging for awareness only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_extrapolation_homecourse_geosort.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all manual flows verified working)"},
+  "seed_data_creation": "None persisted; home_course was set then cleared back to empty during testing; wishlist test entry (Cypress Ridge) added then removed via cleanup calls.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 3 new features (fair 18-hole scoring average, home course toggle, location-first sort) fully verified at both backend (pytest) and frontend (Playwright/browser automation) level with 0 bugs found. reese's expected avg=81.0 and Pebble Beach course avg/best=82.0/82 confirmed via API and UI. Regression spot-checks (wishlist, course detail) also pass. No blocking issues; this session's scope is complete."
+}

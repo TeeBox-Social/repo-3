@@ -263,7 +263,10 @@ export const api = {
     request<{ id: string; display_name: string; avatar?: string | null }>(
       `/users/by-name/${encodeURIComponent(name)}`,
     ),
-  discoverCourses: (q: string) => request<any[]>(`/discover/courses?q=${encodeURIComponent(q)}`),
+  discoverCourses: (q: string, coords?: { lat: number; lng: number }) =>
+    request<any[]>(
+      `/discover/courses?q=${encodeURIComponent(q)}${coords ? `&lat=${coords.lat}&lng=${coords.lng}` : ''}`,
+    ),
   discoverCoursesNearby: (lat: number, lng: number, radiusKm = 80) =>
     request<Array<{
       course_name: string;
@@ -284,18 +287,22 @@ export const api = {
     request<any>('/courses/reviews', { method: 'POST', body: JSON.stringify(payload) }),
 
   // ---- Course search / community submission ----
-  searchCourses: (q: string) =>
+  searchCourses: (q: string, coords?: { lat: number; lng: number }) =>
     request<Array<{
       id: string;
       name: string;
       city?: string | null;
       region?: string | null;
       country?: string | null;
+      lat?: number | null;
+      lng?: number | null;
       par?: number | null;
       num_holes?: number | null;
       verified: boolean;
       submitted_by_me: boolean;
-    }>>(`/courses/search?q=${encodeURIComponent(q)}`),
+    }>>(
+      `/courses/search?q=${encodeURIComponent(q)}${coords ? `&lat=${coords.lat}&lng=${coords.lng}` : ''}`,
+    ),
   submitCourse: (payload: { name: string; par: number; city?: string; region?: string; country?: string }) =>
     request<{ course: any; created: boolean }>('/courses', {
       method: 'POST',

@@ -79,10 +79,13 @@ export function CourseAutocomplete({ value, selected, onSelect, onChangeText, on
     setQuery(value);
   }, [value]);
 
+  const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
   const fetchNearby = useCallback(async () => {
     setNearbyLoading(true);
     try {
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      coordsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const list = await api.discoverCoursesNearby(pos.coords.latitude, pos.coords.longitude, 80);
       setNearby(
         list.slice(0, 8).map((c: any) => ({
@@ -147,7 +150,7 @@ export function CourseAutocomplete({ value, selected, onSelect, onChangeText, on
     }
     setLoading(true);
     try {
-      const hits = await api.searchCourses(q.trim());
+      const hits = await api.searchCourses(q.trim(), coordsRef.current || undefined);
       setSuggestions(hits);
     } catch {
       setSuggestions([]);

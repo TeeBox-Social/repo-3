@@ -14,10 +14,12 @@ from db import (
     wishlists_col,
 )
 from helpers import (
+    batch_course_par_cache,
     compute_achievement_defs,
     emit_notification,
     enrich_round,
     enrich_wishlist_entry,
+    extrapolate_18_score,
     now_iso,
     public_user,
     safe_query,
@@ -33,59 +35,24 @@ async def get_user(user_id: str, user=Depends(get_current_user)):
     target = await users_col.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0, "email": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    round_count = await rounds_col.count_documents({"user_id": user_id})
+    round_count = await rounds_col.count_documents({"user_id": user_id, "post_type": {"$in": ["round", None]}})
     # Normalize 9-hole rounds to their 18-hole equivalent for a fair average.
     scores_cursor = rounds_col.find(
-        {"user_id": user_id},
+        {"user_id": user_id, "post_type": {"$in": ["round", None]}},
         {"_id": 0, "total_score": 1, "holes_played": 1, "par": 1, "course_name": 1},
     ).sort("created_at", -1).limit(20)
-    recent_scores: List[float] = []
-    
-    # ---- QUICK WIN #1: Batch course lookups with $in instead of N+1 ----
-    # First pass: collect all course names from the recent scores
-    score_list = []
-    course_names = set()
-    async for s in scores_cursor:
-        score_list.append(s)
-        cname = s.get("course_name")
-        if cname:
-            course_names.add(cname)
-    
-    # Batch-load all courses in one query
-    course_par_cache: dict[str, int] = {}
-    if course_names:
-        async for course in courses_col.find(
-            {"name": {"$in": list(course_names)}},
-            {"_id": 0, "name": 1, "par": 1}
-        ):
-            cname = course.get("name")
-            if cname:
-                course_par_cache[cname] = int(course.get("par") or 0)
-    
-    # Second pass: compute equivalent scores using cached course pars
-    for s in score_list:
-        holes = int(s.get("holes_played") or 18)
-        raw = float(s.get("total_score") or 0)
-        if holes >= 18:
-            recent_scores.append(raw)
-            continue
-        target_par = 72
-        cname = s.get("course_name")
-        if cname:
-            if cname in course_par_cache:
-                cp = course_par_cache[cname]
-                if cp >= 60:
-                    target_par = cp
-                else:
-                    target_par = int(s.get("par") or 36) * 2
-            else:
-                target_par = int(s.get("par") or 36) * 2
-        else:
-            target_par = int(s.get("par") or 36) * 2
-        round_par = int(s.get("par") or 36) or 36
-        equiv = raw * (target_par / round_par)
-        recent_scores.append(equiv)
-    
+    score_list = [s async for s in scores_cursor]
+    course_par_cache = await batch_course_par_cache(s.get("course_name") for s in score_list)
+    recent_scores: List[float] = [
+        extrapolate_18_score(
+            float(s.get("total_score") or 0),
+            s.get("holes_played"),
+            s.get("par"),
+            course_par_cache.get(s.get("course_name")),
+        )
+        for s in score_list
+        if s.get("total_score") is not None
+    ]
     avg_score = round(sum(recent_scores) / len(recent_scores), 1) if recent_scores else None
     follower_count = await follows_col.count_documents({"target_id": user_id})
     following_count = await follows_col.count_documents({"user_id": user_id})
@@ -144,35 +111,47 @@ async def get_user_rounds(user_id: str, user=Depends(get_current_user)):
 @router.get("/users/{user_id}/courses-played")
 async def get_courses_played(user_id: str, user=Depends(get_current_user)):
     """List every distinct course this user has posted a round at, plus stats.
-    Ordered by play count desc so favourites bubble to the top."""
+    Ordered by play count desc so favourites bubble to the top. Average (and
+    best) score is normalized to its 18-hole equivalent so 9-hole rounds
+    don't skew the numbers when mixed with full rounds at the same course."""
     _ = user  # requires auth but no per-viewer data
-    out = []
-    async for c in rounds_col.aggregate([
-        {"$match": {"user_id": user_id, "post_type": {"$in": ["round", None]}}},
-        {"$group": {
-            "_id": "$course_name",
-            "play_count": {"$sum": 1},
-            "best_score": {"$min": "$total_score"},
-            "avg_score": {"$avg": "$total_score"},
-            "last_played": {"$max": "$created_at"},
-        }},
-        {"$match": {"_id": {"$ne": ""}}},
-        {"$sort": {"play_count": -1, "_id": 1}},
-    ]):
-        name = c["_id"]
+    docs = [
+        d async for d in rounds_col.find(
+            {"user_id": user_id, "post_type": {"$in": ["round", None]}, "course_name": {"$ne": ""}},
+            {"_id": 0, "course_name": 1, "total_score": 1, "holes_played": 1, "par": 1, "created_at": 1},
+        )
+    ]
+    course_par_cache = await batch_course_par_cache(d.get("course_name") for d in docs)
+    grouped: dict = {}
+    for d in docs:
+        name = d.get("course_name")
         if not name:
             continue
+        g = grouped.setdefault(name, {"play_count": 0, "equivs": [], "last_played": None})
+        g["play_count"] += 1
+        raw = d.get("total_score")
+        if raw is not None:
+            g["equivs"].append(
+                extrapolate_18_score(float(raw), d.get("holes_played"), d.get("par"), course_par_cache.get(name))
+            )
+        played_at = d.get("created_at")
+        if played_at and (g["last_played"] is None or played_at > g["last_played"]):
+            g["last_played"] = played_at
+
+    out = []
+    for name, g in grouped.items():
         course = await courses_col.find_one({"name": name}, {"_id": 0})
         out.append({
             "course_name": name,
-            "play_count": c["play_count"],
-            "best_score": c.get("best_score"),
-            "avg_score": round(c["avg_score"], 1) if c.get("avg_score") else None,
-            "last_played": c.get("last_played"),
+            "play_count": g["play_count"],
+            "best_score": round(min(g["equivs"])) if g["equivs"] else None,
+            "avg_score": round(sum(g["equivs"]) / len(g["equivs"]), 1) if g["equivs"] else None,
+            "last_played": g["last_played"],
             "city": course.get("city") if course else None,
             "region": course.get("region") if course else None,
             "country": course.get("country") if course else None,
         })
+    out.sort(key=lambda c: (-c["play_count"], c["course_name"].lower()))
     return out
 
 

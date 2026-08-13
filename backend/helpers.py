@@ -30,6 +30,43 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---- 9-hole -> 18-hole equivalent scoring (fair averages) ----
+def extrapolate_18_score(raw_score: float, holes_played: Optional[int], round_par: Optional[int], course_full_par: Optional[int] = None) -> float:
+    """Scale a 9-hole score to its 18-hole equivalent so per-user/per-course
+    averages aren't skewed by mixing 9- and 18-hole rounds (a 41 on the front
+    nine is roughly an 82 pace, not a much-better-looking 41-in-the-average).
+
+    Proportional scaling by par ratio: a round shot X-strokes-relative-to-par
+    over its own 9 holes is treated as shooting the same relative performance
+    across a full 18. Uses the course's real, full 18-hole par when we know
+    it (e.g. from OpenGolfAPI enrichment); otherwise falls back to simply
+    doubling the round's own 9-hole par (36 -> 72).
+    """
+    holes = int(holes_played or 18)
+    if holes >= 18:
+        return raw_score
+    rp = int(round_par or 36) or 36
+    if course_full_par and course_full_par >= 60:
+        target_par = course_full_par
+    else:
+        target_par = rp * 2
+    return raw_score * (target_par / rp)
+
+
+async def batch_course_par_cache(course_names) -> dict:
+    """Batch-load {course_name: full_par} for a set of course names in one
+    query, for use with :func:`extrapolate_18_score`."""
+    names = [n for n in course_names if n]
+    cache: dict = {}
+    if not names:
+        return cache
+    async for course in courses_col.find({"name": {"$in": list(set(names))}}, {"_id": 0, "name": 1, "par": 1}):
+        cname = course.get("name")
+        if cname:
+            cache[cname] = int(course.get("par") or 0)
+    return cache
+
+
 # ---- Regex safety (SEC-004) ----
 _regex_meta = re.compile(r"[.*+?^${}()|\[\]\\]")
 
