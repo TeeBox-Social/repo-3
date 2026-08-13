@@ -41,6 +41,7 @@ type Props = {
   onChangeText: (text: string) => void;
   onDetail?: (detail: any) => void;
   placeholder?: string;
+  label?: string;
   testID?: string;
 };
 
@@ -61,7 +62,7 @@ type Props = {
  * `selected` is a controlled prop from the parent so it stays in sync with
  * the parent's picked/unpicked state without racing against onChangeText.
  */
-export function CourseAutocomplete({ value, selected, onSelect, onChangeText, onDetail, placeholder, testID }: Props) {
+export function CourseAutocomplete({ value, selected, onSelect, onChangeText, onDetail, placeholder, label, testID }: Props) {
   useTheme();
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<CourseHit[]>([]);
@@ -190,7 +191,7 @@ export function CourseAutocomplete({ value, selected, onSelect, onChangeText, on
 
   return (
     <View style={styles.wrap} testID={testID}>
-      <Text style={styles.label}>Course</Text>
+      <Text style={styles.label}>{label || 'Course'}</Text>
       <View style={[styles.inputWrap, focused && styles.inputWrapFocus, selected && styles.inputWrapLocked]}>
         {selected ? (
           <Ionicons name="checkmark-circle" size={18} color={colors.brandPrimary} />

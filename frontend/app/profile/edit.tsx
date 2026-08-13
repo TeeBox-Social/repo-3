@@ -19,6 +19,7 @@ import { makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
+import { CourseAutocomplete } from '@/src/components/CourseAutocomplete';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -29,6 +30,7 @@ export default function ProfileEdit() {
   const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [handicap, setHandicap] = useState(user?.handicap != null ? String(user.handicap) : '');
   const [homeCourse, setHomeCourse] = useState(user?.home_course || '');
+  const [homeCourseSelected, setHomeCourseSelected] = useState(!!user?.home_course);
   const [bio, setBio] = useState(user?.bio || '');
   const [avatar, setAvatar] = useState<string | null>(user?.avatar || null);
   const [saving, setSaving] = useState(false);
@@ -146,12 +148,20 @@ export default function ProfileEdit() {
             keyboardType="decimal-pad"
             placeholder="e.g. 12.4"
           />
-          <TBInput
-            label="Home course"
+          <CourseAutocomplete
             testID="profile-edit-home"
+            label="Home course"
+            placeholder="Search for your home course…"
             value={homeCourse}
-            onChangeText={setHomeCourse}
-            placeholder="Pebble Meadows GC"
+            selected={homeCourseSelected}
+            onChangeText={(t) => {
+              setHomeCourse(t);
+              setHomeCourseSelected(false);
+            }}
+            onSelect={(c) => {
+              setHomeCourse(c.name);
+              setHomeCourseSelected(!!c.name);
+            }}
           />
           <TBInput
             label="Bio"
