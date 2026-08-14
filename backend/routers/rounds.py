@@ -11,6 +11,7 @@ from helpers import (
     enrich_round,
     now_iso,
     public_user,
+    resolve_mentions_from_text,
     validate_b64_image,
 )
 from models import CommentIn, CommentUpdate, RoundIn, RoundUpdate
@@ -212,12 +213,21 @@ async def add_comment(round_id: str, data: CommentIn, user=Depends(get_current_u
     r = await rounds_col.find_one({"id": round_id})
     if not r:
         raise HTTPException(status_code=404, detail="Round not found")
+    # Merge client-provided mention ids with any @handles we can resolve from
+    # the comment text itself. This ensures notifications still fire when a
+    # user types "@Reese_Callahan" manually without tapping the autocomplete
+    # suggestion (the frontend only captures ids on suggestion tap).
+    mention_ids = await resolve_mentions_from_text(
+        data.text,
+        exclude_user_id=user["id"],
+        seed_ids=data.mentions or [],
+    )
     doc = {
         "id": str(uuid.uuid4()),
         "round_id": round_id,
         "user_id": user["id"],
         "text": data.text.strip(),
-        "mentions": data.mentions or [],
+        "mentions": mention_ids,
         "liked_by": [],
         "created_at": now_iso(),
     }
@@ -238,22 +248,21 @@ async def add_comment(round_id: str, data: CommentIn, user=Depends(get_current_u
                 "actor_name": user.get("display_name"),
             },
         )
-    # Notify every @-mentioned user.
-    for mention_id in (data.mentions or []):
-        if mention_id and mention_id != user["id"]:
-            await emit_notification(
-                user_id=mention_id,
-                pref_key="mention",
-                type_="mention",
-                title="You were mentioned",
-                body=f'{user.get("display_name") or "Someone"} mentioned you in a comment.',
-                extra={
-                    "round_id": round_id,
-                    "comment_id": doc["id"],
-                    "actor_id": user["id"],
-                    "actor_name": user.get("display_name"),
-                },
-            )
+    # Notify every @-mentioned user (resolver already excluded self).
+    for mention_id in mention_ids:
+        await emit_notification(
+            user_id=mention_id,
+            pref_key="mention",
+            type_="mention",
+            title="You were mentioned",
+            body=f'{user.get("display_name") or "Someone"} mentioned you in a comment.',
+            extra={
+                "round_id": round_id,
+                "comment_id": doc["id"],
+                "actor_id": user["id"],
+                "actor_name": user.get("display_name"),
+            },
+        )
     return {
         **doc,
         "author": {
@@ -278,13 +287,37 @@ async def update_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
     if c["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
+    # Resolve @handles from the new text so manually-typed mentions still
+    # trigger notifications, and dedupe against ids the client sent (if any).
+    new_mention_ids = await resolve_mentions_from_text(
+        data.text,
+        exclude_user_id=user["id"],
+        seed_ids=data.mentions if data.mentions is not None else [],
+    )
     updates: dict = {
         "text": data.text.strip(),
+        "mentions": new_mention_ids,
         "edited_at": now_iso(),
     }
-    if data.mentions is not None:
-        updates["mentions"] = data.mentions
     await comments_col.update_one({"id": comment_id}, {"$set": updates})
+    # Notify anyone who is newly-tagged in this edit (skip previously-tagged).
+    previous = set(c.get("mentions") or [])
+    for mention_id in new_mention_ids:
+        if mention_id in previous:
+            continue
+        await emit_notification(
+            user_id=mention_id,
+            pref_key="mention",
+            type_="mention",
+            title="You were mentioned",
+            body=f'{user.get("display_name") or "Someone"} mentioned you in a comment.',
+            extra={
+                "round_id": round_id,
+                "comment_id": comment_id,
+                "actor_id": user["id"],
+                "actor_name": user.get("display_name"),
+            },
+        )
     fresh = await comments_col.find_one({"id": comment_id}, {"_id": 0})
     liked_by = fresh.get("liked_by") or []
     return {

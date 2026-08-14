@@ -58,8 +58,11 @@ export default function LogRound() {
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // True once the user hand-edits Par themselves — stops our auto-calculation
-  // from overwriting their custom value on every course/holes/nine change.
+  // Par is now non-editable — the value is derived exclusively from the
+  // selected course + holes + front/back-9 choice. The ref used to guard
+  // against auto-overwrite when the user hand-edited Par; it stays here as a
+  // no-op so unrelated code paths (like the course-select handler which used
+  // to reset it) keep compiling, but the "touched" state is never set to true.
   const parTouchedRef = React.useRef(false);
 
   // A course is a "native nine" when we know for certain it's only a 9-hole
@@ -350,17 +353,15 @@ export default function LogRound() {
                 })}
               </View>
             </View>
-            <TBInput
-              label="Par"
-              testID="log-par"
-              value={par}
-              onChangeText={(t) => {
-                parTouchedRef.current = true;
-                setPar(t);
-              }}
-              keyboardType="number-pad"
-              containerStyle={{ flex: 1 }}
-            />
+            <View style={styles.parChipWrap}>
+              <Text style={styles.dropdownLabel}>Par</Text>
+              <View style={styles.parChip} testID="log-par-readonly">
+                <Text style={styles.parChipValue}>{par || (holes === '9' ? '36' : '72')}</Text>
+                <Text style={styles.parChipHint} numberOfLines={1}>
+                  from course
+                </Text>
+              </View>
+            </View>
             <TBInput
               label="Total score"
               testID="log-score"
@@ -652,6 +653,21 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   },
   holePillText: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
   holePillTextActive: { color: '#fff' },
+  parChipWrap: { flex: 1, gap: 6 },
+  parChip: {
+    height: 46,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  parChipValue: { fontSize: 17, fontWeight: '800', color: colors.onSurface },
+  parChipHint: { fontSize: 11, fontWeight: '600', color: colors.muted, letterSpacing: 0.2 },
   dropdownLabel: { fontSize: 13, fontWeight: '700', color: colors.onSurface, letterSpacing: 0.2 },
   notesInput: {
     minHeight: 90,

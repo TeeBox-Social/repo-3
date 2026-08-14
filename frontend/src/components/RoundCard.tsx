@@ -299,24 +299,29 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
         <View style={styles.likeGroup}>
           <Pressable
             testID={`round-card-like-${round.id}`}
-            hitSlop={8}
-            onPress={() => {
+            hitSlop={16}
+            onPress={(e) => {
+              // Ensure the tap does NOT bubble up to the card-wide Pressable
+              // that opens the post detail. Without stopPropagation, taps near
+              // the edge of the heart icon can be captured by the parent.
+              e?.stopPropagation?.();
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               onLike();
             }}
-            style={styles.actionBtn}
+            style={styles.likeBtn}
           >
             <Ionicons
               name={round.liked_by_me ? 'heart' : 'heart-outline'}
-              size={16}
+              size={24}
               color={round.liked_by_me ? colors.brandSecondary : colors.onSurface}
             />
           </Pressable>
           <Pressable
             testID={`round-card-like-count-${round.id}`}
-            hitSlop={8}
+            hitSlop={12}
             disabled={!round.like_count}
-            onPress={() => {
+            onPress={(e) => {
+              e?.stopPropagation?.();
               Haptics.selectionAsync().catch(() => {});
               setLikersOpen(true);
             }}
@@ -327,11 +332,14 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
         </View>
         <Pressable
           testID={`round-card-comment-${round.id}`}
-          hitSlop={8}
-          onPress={openComposer}
-          style={styles.actionBtn}
+          hitSlop={12}
+          onPress={(e) => {
+            e?.stopPropagation?.();
+            openComposer();
+          }}
+          style={styles.commentBtn}
         >
-          <Ionicons name="chatbubble-outline" size={15} color={colors.onSurface} />
+          <Ionicons name="chatbubble-outline" size={22} color={colors.onSurface} />
           <Text style={styles.actionText}>{commentCount}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -575,8 +583,25 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
     borderTopColor: colors.divider,
   },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  // Generous 44×44 touch targets so users don't have to bulls-eye the icon.
+  // The extra horizontal padding also puts more empty space between the like
+  // and comment controls so a slightly-off tap can't accidentally hit both.
+  likeBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentBtn: {
+    minHeight: 44,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   likeGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  likeCountBtn: { paddingVertical: 4, paddingHorizontal: 2 },
+  likeCountBtn: { minHeight: 44, paddingHorizontal: 6, justifyContent: 'center' },
   actionText: { fontSize: 13, color: colors.onSurface, fontWeight: '700' },
   likePreview: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -spacing.xs },
   likePreviewText: { fontSize: 12.5, color: colors.muted, fontWeight: '700', flex: 1 },

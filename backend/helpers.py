@@ -134,6 +134,81 @@ async def emit_notification(
         logger.exception("Failed to emit notification type=%s user=%s", type_, user_id)
 
 
+# ---- @-mention resolution ----
+# Match tokens like `@Reese_Callahan` or `@jordan`. Frontend `MentionInput`
+# replaces spaces in display names with underscores when it inserts a tag, so
+# `_` is a legal handle char here. We stop at spaces / newlines / punctuation
+# except underscore.
+_MENTION_TOKEN_RE = re.compile(r"(?:^|(?<=\s))@([A-Za-z0-9_][A-Za-z0-9_\-]{0,49})")
+
+
+async def resolve_mentions_from_text(
+    text: Optional[str],
+    *,
+    exclude_user_id: Optional[str] = None,
+    seed_ids: Optional[List[str]] = None,
+) -> List[str]:
+    """Parse ``@Handle`` tokens from free-form text and resolve them to user ids.
+
+    Combines ids the client already sent (``seed_ids``) with ids resolved from
+    the text so that a user who typed ``@Reese_Callahan`` manually — without
+    tapping the autocomplete suggestion — still triggers a mention notification.
+    Returns a de-duplicated list, minus ``exclude_user_id`` (the author of the
+    comment/round — nobody needs to be notified they mentioned themselves).
+    """
+    ids: list[str] = []
+    seen: set[str] = set()
+    for i in (seed_ids or []):
+        if not i or i in seen:
+            continue
+        if exclude_user_id and i == exclude_user_id:
+            continue
+        seen.add(i)
+        ids.append(i)
+
+    if not text:
+        return ids
+
+    handles = { m.group(1) for m in _MENTION_TOKEN_RE.finditer(text) }
+    if not handles:
+        return ids
+
+    # Build candidate display-name variants: exact token, underscores → spaces,
+    # underscores → dashes (some display names might contain hyphens instead
+    # of underscores when we handled a hyphenated last name).
+    candidates: set[str] = set()
+    for h in handles:
+        candidates.add(h)
+        candidates.add(h.replace("_", " "))
+        candidates.add(h.replace("_", "-"))
+
+    # Case-insensitive exact match on display_name for any of the candidate
+    # forms. We anchor with ^...$ so `@Sam` doesn't accidentally pull in
+    # `Sam Rivera`, `Samir`, etc — the frontend always inserts the full
+    # display name so exact match is the right semantic.
+    or_clauses = [
+        {"display_name": {"$regex": f"^{re.escape(c)}$", "$options": "i"}}
+        for c in candidates
+    ]
+    try:
+        async for u in users_col.find(
+            {"$or": or_clauses},
+            {"_id": 0, "id": 1},
+        ):
+            uid = u.get("id")
+            if not uid or uid in seen:
+                continue
+            if exclude_user_id and uid == exclude_user_id:
+                continue
+            seen.add(uid)
+            ids.append(uid)
+    except Exception:
+        logger.exception("mention resolution failed for handles=%s", handles)
+
+    return ids
+
+
+
 # ---- Round enrichment ----
 # RECOMMENDATION #1: Batch-load stats instead of per-round queries
 async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Optional[dict] = None, comment_count_map: Optional[dict] = None, liked_by_me_map: Optional[dict] = None) -> dict:
