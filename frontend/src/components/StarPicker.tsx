@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { View, StyleSheet, PanResponder, LayoutChangeEvent, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radius, spacing } from '@/src/theme';
 
-import { makeThemedSheet } from '@/src/theme';
+import { colors, radius, spacing, makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
 type Props = {
   value: number; // 0..5, 0.25 step
@@ -15,14 +14,34 @@ type Props = {
 
 /**
  * Tap or drag across the 5-star row to pick a rating in 0.25 increments.
+ *
+ * Uses absolute screen coordinates (measureInWindow + pageX) instead of
+ * PanResponder's `locationX`. `locationX` is resolved inconsistently
+ * between iOS and Android when the responder view has nested/absolutely
+ * positioned children (our filled-star overlay) — Android can report the
+ * touch position relative to whichever child was actually hit, which caused
+ * the reported rating to jump to the wrong value (e.g. dragging to ~3.75
+ * would sometimes register as a full 5). `pageX` is always in screen space
+ * on both platforms, so anchoring against the container's own measured
+ * screen offset keeps the math correct and consistent everywhere.
  */
 export function StarPicker({ value, onChange, size = 40, testID }: Props) {
   useTheme();
+  const containerRef = React.useRef<View>(null);
   const [width, setWidth] = useState(0);
+  const containerX = React.useRef(0);
   const lastRef = React.useRef<number>(value);
 
-  const setFromX = (x: number) => {
+  const measure = () => {
+    containerRef.current?.measureInWindow((x, _y, w) => {
+      containerX.current = x;
+      if (w) setWidth(w);
+    });
+  };
+
+  const setFromPageX = (pageX: number) => {
     if (width <= 0) return;
+    const x = pageX - containerX.current;
     const clamped = Math.max(0, Math.min(width, x));
     const raw = (clamped / width) * 5;
     const stepped = Math.round(raw * 4) / 4; // 0.25 step
@@ -39,14 +58,17 @@ export function StarPicker({ value, onChange, size = 40, testID }: Props) {
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (e) => setFromX(e.nativeEvent.locationX),
-        onPanResponderMove: (e) => setFromX(e.nativeEvent.locationX),
+        onPanResponderGrant: (e) => {
+          measure();
+          setFromPageX(e.nativeEvent.pageX);
+        },
+        onPanResponderMove: (e) => setFromPageX(e.nativeEvent.pageX),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [width],
   );
 
-  const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
+  const onLayout = (_e: LayoutChangeEvent) => measure();
 
   const clamped = Math.max(0, Math.min(5, value));
   const pct = (clamped / 5) * 100;
@@ -55,6 +77,7 @@ export function StarPicker({ value, onChange, size = 40, testID }: Props) {
     <View style={{ gap: spacing.sm }}>
       <View
         testID={testID}
+        ref={containerRef}
         style={styles.wrap}
         onLayout={onLayout}
         {...panResponder.panHandlers}

@@ -1,32 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 import { colors, IMAGES, radius, shadow, spacing } from '@/src/theme';
 import { makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
 import { api } from '@/src/api';
-import { TBButton } from '@/src/components/TBButton';
-import { TBInput } from '@/src/components/TBInput';
-import { RoundCard } from '@/src/components/RoundCard';
-import { StarPicker } from '@/src/components/StarPicker';
 import { StarDisplay } from '@/src/components/StarDisplay';
 import { WishlistButton } from '@/src/components/WishlistButton';
 import { HomeCourseButton } from '@/src/components/HomeCourseButton';
 import { CourseFactSheet } from '@/src/components/CourseFactSheet';
+import { RoundCard } from '@/src/components/RoundCard';
 
 type Filter = 'all' | 'low' | 'mid' | 'high';
 
@@ -54,11 +48,7 @@ export default function CourseDetail() {
   const [info, setInfo] = useState<any>(null);
   const [reviews, setReviews] = useState<any[] | null>(null);
   const [rounds, setRounds] = useState<any[] | null>(null);
-  const [text, setText] = useState('');
-  const [rating, setRating] = useState(4.0);
   const [filter, setFilter] = useState<Filter>('all');
-  const [posting, setPosting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,9 +63,14 @@ export default function CourseDetail() {
     } catch {}
   }, [courseName]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Refetch every time this screen regains focus — e.g. after posting a
+  // review or logging a round from here and navigating back — so the page
+  // always reflects the latest data without a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const avgRating: number | null = info?.avg_rating ?? null;
 
@@ -84,23 +79,12 @@ export default function CourseDetail() {
     return reviews.filter((r) => inBucket(r.author?.handicap, filter));
   }, [reviews, filter]);
 
-  const submit = async () => {
-    setErr(null);
-    if (!text.trim()) {
-      setErr('Write a quick review');
-      return;
-    }
-    setPosting(true);
-    try {
-      await api.createReview({ course_name: courseName, rating, text: text.trim() });
-      setText('');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      await load();
-    } catch (e: any) {
-      setErr(e?.message || 'Failed to post');
-    } finally {
-      setPosting(false);
-    }
+  const goToReview = () => {
+    router.push(`/course/review/${encodeURIComponent(courseName)}`);
+  };
+
+  const goToLogRound = () => {
+    router.push({ pathname: '/(tabs)/log', params: { course: courseName } });
   };
 
   const openMaps = () => {
@@ -140,10 +124,6 @@ export default function CourseDetail() {
 
   return (
     <View style={styles.container} testID="course-detail-screen">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
         <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
           <View style={styles.hero}>
             <Image source={{ uri: IMAGES.courseThumb }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
@@ -207,25 +187,26 @@ export default function CourseDetail() {
           </View>
 
           <View style={styles.body}>
-            <CourseFactSheet info={info} />
+            <View style={styles.ctaRow}>
+              <Pressable
+                testID="course-post-review-cta"
+                onPress={goToReview}
+                style={[styles.ctaBtn, styles.ctaBtnGhost]}
+              >
+                <Ionicons name="create-outline" size={18} color={colors.brandPrimary} />
+                <Text style={styles.ctaBtnGhostText}>Post review</Text>
+              </Pressable>
+              <Pressable
+                testID="course-log-round-cta"
+                onPress={goToLogRound}
+                style={[styles.ctaBtn, styles.ctaBtnPrimary]}
+              >
+                <Ionicons name="golf" size={18} color="#fff" />
+                <Text style={styles.ctaBtnPrimaryText}>Log Round</Text>
+              </Pressable>
+            </View>
 
-            <Text style={styles.sectionTitle}>Write a review</Text>
-            <StarPicker value={rating} onChange={setRating} testID="course-star-picker" />
-            <TBInput
-              testID="course-review-input"
-              value={text}
-              onChangeText={setText}
-              placeholder="Fairways in great shape, greens rolled fast..."
-              multiline
-              style={{ minHeight: 80, textAlignVertical: 'top' }}
-            />
-            {err ? <Text style={styles.errText}>{err}</Text> : null}
-            <TBButton
-              label={posting ? 'Posting…' : 'Post review'}
-              testID="course-review-submit"
-              onPress={submit}
-              loading={posting}
-            />
+            <CourseFactSheet info={info} />
 
             <View style={styles.reviewsHeader}>
               <Text style={styles.sectionTitle}>Reviews</Text>
@@ -279,7 +260,6 @@ export default function CourseDetail() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -395,6 +375,24 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   mapsText: { color: colors.brandDeep, fontWeight: '800', fontSize: 13 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
   body: { padding: spacing.xl, gap: spacing.md },
+  ctaRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  ctaBtn: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  ctaBtnPrimary: { backgroundColor: colors.brandPrimary, ...shadow.card },
+  ctaBtnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  ctaBtnGhost: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: colors.brandPrimary,
+  },
+  ctaBtnGhostText: { color: colors.brandPrimary, fontSize: 15, fontWeight: '800' },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.onSurface },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   allPill: {

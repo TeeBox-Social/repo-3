@@ -49,6 +49,7 @@ function pickHoleYardageKey(holes: Hole[]): string {
 
 export function CourseFactSheet({ info }: { info: any }) {
   const [holesTab, setHolesTab] = useState<'front' | 'back'>('front');
+  const [holesOpen, setHolesOpen] = useState(false);
   const tees: Tee[] = useMemo(() => info?.tees || [], [info?.tees]);
   const holes: Hole[] = useMemo(() => info?.holes || [], [info?.holes]);
   const climate: Climate | null = info?.climate || null;
@@ -84,32 +85,10 @@ export function CourseFactSheet({ info }: { info: any }) {
 
   if (!holes.length && !tees.length) return null;
 
+  const hasCourseInfo = !!(info?.architect || info?.year_built || info?.website || info?.phone);
+
   return (
     <View style={{ gap: spacing.xl }}>
-      {(info?.architect || info?.year_built || info?.website || info?.phone) ? (
-        <View>
-          <Text style={styles.sectionTitle}>Course info</Text>
-          <View style={styles.infoCard}>
-            {info?.architect ? (
-              <InfoRow icon="brush-outline" label="Architect" value={info.architect} />
-            ) : null}
-            {info?.year_built ? (
-              <InfoRow icon="calendar-outline" label="Built" value={String(info.year_built)} />
-            ) : null}
-            {info?.website ? (
-              <Pressable onPress={() => Linking.openURL(info.website).catch(() => {})}>
-                <InfoRow icon="globe-outline" label="Website" value={info.website.replace(/^https?:\/\//, '')} link />
-              </Pressable>
-            ) : null}
-            {info?.phone ? (
-              <Pressable onPress={() => Linking.openURL(`tel:${info.phone}`).catch(() => {})}>
-                <InfoRow icon="call-outline" label="Phone" value={info.phone} link />
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
       {dedupedTees.length > 0 ? (
         <View>
           <Text style={styles.sectionTitle}>Tees</Text>
@@ -140,51 +119,69 @@ export function CourseFactSheet({ info }: { info: any }) {
 
       {holes.length > 0 ? (
         <View>
-          <View style={styles.holesHeaderRow}>
-            <Text style={styles.sectionTitle}>Hole-by-hole</Text>
-            {!nativeNine ? (
-              <View style={styles.holesToggle}>
-                {(['front', 'back'] as const).map((k) => (
-                  <Pressable
-                    key={k}
-                    testID={`course-holes-${k}`}
-                    onPress={() => setHolesTab(k)}
-                    style={[styles.holesToggleBtn, holesTab === k && styles.holesToggleBtnActive]}
-                  >
-                    <Text style={[styles.holesToggleText, holesTab === k && styles.holesToggleTextActive]}>
-                      {k === 'front' ? 'Front 9' : 'Back 9'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.holesTable}>
-            <View style={styles.holesRowHeader}>
-              <Text style={[styles.holesCellHeader, { flex: 1.1 }]}>Hole</Text>
-              <Text style={[styles.holesCellHeader, { flex: 0.8 }]}>Par</Text>
-              <Text style={[styles.holesCellHeader, { flex: 0.8 }]}>HCP</Text>
-              <Text style={[styles.holesCellHeader, { flex: 1.1, textAlign: 'right' }]}>Yds</Text>
-            </View>
-            {shown.map((h) => (
-              <View key={h.number} style={styles.holesRow} testID={`course-hole-${h.number}`}>
-                <Text style={[styles.holesCell, { flex: 1.1, fontWeight: '800' }]}>{h.number}</Text>
-                <Text style={[styles.holesCell, { flex: 0.8 }]}>{h.par}</Text>
-                <Text style={[styles.holesCell, { flex: 0.8 }]}>{h.handicap_index ?? '—'}</Text>
-                <Text style={[styles.holesCell, { flex: 1.1, textAlign: 'right' }]}>
-                  {(h.yardages || {})[yardageKey] ?? '—'}
-                </Text>
-              </View>
-            ))}
-            <View style={styles.holesTotalRow}>
-              <Text style={[styles.holesCell, { flex: 1.1, fontWeight: '800' }]}>Total</Text>
-              <Text style={[styles.holesCell, { flex: 0.8, fontWeight: '800' }]}>{shownTotal}</Text>
-              <Text style={[styles.holesCell, { flex: 0.8 }]} />
-              <Text style={[styles.holesCell, { flex: 1.1, textAlign: 'right', fontWeight: '800' }]}>
-                {shownYds || '—'}
+          <Pressable
+            testID="course-holes-toggle"
+            onPress={() => setHolesOpen((o) => !o)}
+            style={styles.holesHeaderRow}
+          >
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Hole-by-hole</Text>
+            <View style={styles.holesHeaderRight}>
+              <Text style={styles.holesSummary}>
+                {nativeNine ? '9 holes' : '18 holes'} · Par {info?.par ?? shownTotal}
               </Text>
+              <Ionicons
+                name={holesOpen ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={colors.muted}
+              />
             </View>
-          </View>
+          </Pressable>
+          {holesOpen ? (
+            <View style={{ marginTop: spacing.md }}>
+              {!nativeNine ? (
+                <View style={[styles.holesToggle, { alignSelf: 'flex-start', marginBottom: spacing.sm }]}>
+                  {(['front', 'back'] as const).map((k) => (
+                    <Pressable
+                      key={k}
+                      testID={`course-holes-${k}`}
+                      onPress={() => setHolesTab(k)}
+                      style={[styles.holesToggleBtn, holesTab === k && styles.holesToggleBtnActive]}
+                    >
+                      <Text style={[styles.holesToggleText, holesTab === k && styles.holesToggleTextActive]}>
+                        {k === 'front' ? 'Front 9' : 'Back 9'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.holesTable}>
+                <View style={styles.holesRowHeader}>
+                  <Text style={[styles.holesCellHeader, { flex: 1.1 }]}>Hole</Text>
+                  <Text style={[styles.holesCellHeader, { flex: 0.8 }]}>Par</Text>
+                  <Text style={[styles.holesCellHeader, { flex: 0.8 }]}>HCP</Text>
+                  <Text style={[styles.holesCellHeader, { flex: 1.1, textAlign: 'right' }]}>Yds</Text>
+                </View>
+                {shown.map((h) => (
+                  <View key={h.number} style={styles.holesRow} testID={`course-hole-${h.number}`}>
+                    <Text style={[styles.holesCell, { flex: 1.1, fontWeight: '800' }]}>{h.number}</Text>
+                    <Text style={[styles.holesCell, { flex: 0.8 }]}>{h.par}</Text>
+                    <Text style={[styles.holesCell, { flex: 0.8 }]}>{h.handicap_index ?? '—'}</Text>
+                    <Text style={[styles.holesCell, { flex: 1.1, textAlign: 'right' }]}>
+                      {(h.yardages || {})[yardageKey] ?? '—'}
+                    </Text>
+                  </View>
+                ))}
+                <View style={styles.holesTotalRow}>
+                  <Text style={[styles.holesCell, { flex: 1.1, fontWeight: '800' }]}>Total</Text>
+                  <Text style={[styles.holesCell, { flex: 0.8, fontWeight: '800' }]}>{shownTotal}</Text>
+                  <Text style={[styles.holesCell, { flex: 0.8 }]} />
+                  <Text style={[styles.holesCell, { flex: 1.1, textAlign: 'right', fontWeight: '800' }]}>
+                    {shownYds || '—'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -206,6 +203,30 @@ export function CourseFactSheet({ info }: { info: any }) {
               );
             })}
           </ScrollView>
+        </View>
+      ) : null}
+
+      {hasCourseInfo ? (
+        <View>
+          <Text style={styles.sectionTitle}>Course info</Text>
+          <View style={styles.infoCard}>
+            {info?.architect ? (
+              <InfoRow icon="brush-outline" label="Architect" value={info.architect} />
+            ) : null}
+            {info?.year_built ? (
+              <InfoRow icon="calendar-outline" label="Built" value={String(info.year_built)} />
+            ) : null}
+            {info?.website ? (
+              <Pressable onPress={() => Linking.openURL(info.website).catch(() => {})}>
+                <InfoRow icon="globe-outline" label="Website" value={info.website.replace(/^https?:\/\//, '')} link />
+              </Pressable>
+            ) : null}
+            {info?.phone ? (
+              <Pressable onPress={() => Linking.openURL(`tel:${info.phone}`).catch(() => {})}>
+                <InfoRow icon="call-outline" label="Phone" value={info.phone} link />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
     </View>
@@ -251,7 +272,9 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   teeYardage: { fontSize: 16, fontWeight: '800', color: colors.brandPrimary, marginTop: 2 },
   teeStatsRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   teeStat: { fontSize: 11, color: colors.muted, fontWeight: '600' },
-  holesHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  holesHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  holesHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  holesSummary: { fontSize: 12, fontWeight: '700', color: colors.muted },
   holesToggle: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, padding: 3 },
   holesToggleBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill },
   holesToggleBtnActive: { backgroundColor: colors.surfaceInverse },

@@ -14,8 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { colors, radius, shadow, spacing } from '@/src/theme';
-import { makeThemedSheet } from '@/src/theme';
+import { colors, radius, shadow, spacing, makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
 import { TBButton } from '@/src/components/TBButton';
 import { TBInput } from '@/src/components/TBInput';
@@ -103,10 +102,18 @@ export default function LogRound() {
 
   const applyPrefill = useCallback(() => {
     if (params.course) {
-      setCourseName(String(params.course));
-      // Prefill from share-intent: treat the course as selected since the source
-      // app (Garmin/Grint) has already normalised the name.
+      const cName = String(params.course);
+      setCourseName(cName);
+      // Prefill from share-intent (or the course page's "Log Round" button):
+      // treat the course as selected since the source has already given us
+      // an exact, normalised course name.
       setCourseSelected(true);
+      // Fetch the real course detail so Par auto-computes correctly instead
+      // of falling back to a generic 72 — skip only when a par was already
+      // supplied explicitly (share-intent deep link).
+      if (!params.par) {
+        api.courseInfo(cName).then((detail) => setCourseDetail(detail)).catch(() => {});
+      }
     }
     if (params.score) setTotalScore(String(params.score));
     if (params.par) setPar(String(params.par));
@@ -115,9 +122,14 @@ export default function LogRound() {
     if (params.gir) setGir(String(params.gir));
     if (params.putts) setPutts(String(params.putts));
     if (params.notes) setNotes(String(params.notes));
-    if (params.course || params.score) {
+    if (params.score) {
       setPrefillSource(String(params.source || 'Shared round'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } else if (params.course) {
+      // Quiet prefill (e.g. tapped "Log Round" from a course page) — no
+      // share-intent banner, the course field's own "selected" state already
+      // communicates the pick.
+      Haptics.selectionAsync().catch(() => {});
     }
   }, [params]);
 
