@@ -257,8 +257,13 @@ export default function PostDetail() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.lfgTitle}>Looking for Group</Text>
                   <Text style={styles.lfgSub}>
-                    {[round.meetup_date, lfgSpotsLabel(round)].filter(Boolean).join(' \u00b7 ') ||
-                      'Reply below if you\u2019re in.'}
+                    {round.meetup_date ? `${round.meetup_date}` : ''}
+                    {round.meetup_date && lfgSpotsLabel(round) ? ' \u00b7 ' : ''}
+                    {lfgSpotsLabel(round) ? (
+                      <Text testID={`spots-remaining-${round.id}`}>{lfgSpotsLabel(round)}</Text>
+                    ) : !round.meetup_date ? (
+                      'Reply below if you\u2019re in.'
+                    ) : ''}
                   </Text>
                 </View>
               </View>

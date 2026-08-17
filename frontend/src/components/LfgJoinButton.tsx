@@ -69,7 +69,7 @@ export function LfgJoinButton({
   let iconColor = '#fff';
 
   if (myStatus === 'accepted') {
-    label = "You're confirmed";
+    label = "You're in";
     icon = 'checkmark-circle';
     variant = styles.btnConfirmed;
   } else if (myStatus === 'pending') {

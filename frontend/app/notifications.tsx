@@ -160,7 +160,7 @@ export default function NotificationsScreen() {
             return (
               <Pressable
                 key={n.id}
-                testID={`notif-${n.id}`}
+                testID={`notif-row-${n.id}`}
                 onPress={() => onPressNotification(n)}
                 disabled={!target}
                 style={[styles.card, !n.read && styles.cardUnread]}

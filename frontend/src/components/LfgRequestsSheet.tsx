@@ -76,7 +76,7 @@ export function LfgRequestsSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet} testID="lfg-requests-sheet">
+      <View style={styles.sheet} testID={`lfg-requests-sheet-${roundId}`}>
         <View style={styles.handle} />
         <View style={styles.header}>
           <Text style={styles.title}>Join requests</Text>

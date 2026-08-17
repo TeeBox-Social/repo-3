@@ -244,8 +244,13 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.lfgTitle}>Looking for Group</Text>
             <Text style={styles.lfgSub} numberOfLines={2}>
-              {[round.meetup_date, lfgSpotsLabel(displayRound)].filter(Boolean).join(' \u00b7 ') ||
-                'Reply below if you\u2019re in.'}
+              {round.meetup_date ? `${round.meetup_date}` : ''}
+              {round.meetup_date && lfgSpotsLabel(displayRound) ? ' \u00b7 ' : ''}
+              {lfgSpotsLabel(displayRound) ? (
+                <Text testID={`spots-remaining-${round.id}`}>{lfgSpotsLabel(displayRound)}</Text>
+              ) : !round.meetup_date ? (
+                'Reply below if you\u2019re in.'
+              ) : ''}
             </Text>
           </View>
         </View>
