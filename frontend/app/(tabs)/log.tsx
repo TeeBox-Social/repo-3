@@ -74,18 +74,30 @@ export default function LogRound() {
   const computeEffectivePar = useCallback(
     (detail: any, holesMode: string, nineVal: 'front' | 'back'): number | null => {
       const holesArr: any[] = detail?.holes || [];
+      const aggregatePar = typeof detail?.par === 'number' ? detail.par : null;
+      // Sanity guard: some upstream records ship a broken `holes[]` array
+      // whose par values don't sum to the authoritative aggregate `par`
+      // (e.g. every front-9 hole listed as "par 5"). Treat the holes[]
+      // detail as trustworthy only when its sum matches the aggregate.
+      const holesSum = holesArr.reduce((s, h) => s + (h.par || 0), 0);
+      const holesTrusted =
+        holesArr.length >= 18 && aggregatePar != null && holesSum === aggregatePar;
+
       if (holesMode === '18') {
-        if (holesArr.length >= 18) return holesArr.reduce((s, h) => s + (h.par || 0), 0);
-        return detail?.par ?? null;
+        // Prefer the authoritative aggregate — it's what shows on the
+        // course detail page and what admins/OpenGolfAPI verify.
+        if (aggregatePar != null) return aggregatePar;
+        if (holesArr.length >= 18) return holesSum;
+        return null;
       }
       // 9 holes requested
-      if (detail?.num_holes === 9) return detail?.par ?? null;
-      if (holesArr.length >= 18) {
+      if (detail?.num_holes === 9) return aggregatePar;
+      if (holesTrusted) {
         const subset = holesArr.filter((h) => (nineVal === 'back' ? h.number > 9 : h.number <= 9));
         if (subset.length) return subset.reduce((s: number, h: any) => s + (h.par || 0), 0);
       }
       if (holesArr.length === 9) return holesArr.reduce((s, h) => s + (h.par || 0), 0);
-      if (detail?.par) return Math.round(detail.par / 2);
+      if (aggregatePar != null) return Math.round(aggregatePar / 2);
       return null;
     },
     [],
@@ -133,9 +145,60 @@ export default function LogRound() {
     }
   }, [params]);
 
+  // Consume incoming route params exactly ONCE per unique payload.
+  // `useLocalSearchParams` returns a fresh object reference on every render,
+  // so a naive `useEffect(applyPrefill, [applyPrefill])` would keep forcing
+  // the course selection back on and prevent the user from tapping the (×)
+  // to clear it. We fingerprint the payload and only re-fire when it
+  // actually changes.
+  const appliedPrefillKeyRef = React.useRef<string>('');
   useEffect(() => {
+    const key = [
+      params.course || '',
+      params.score || '',
+      params.par || '',
+      params.holes || '',
+      params.fairways || '',
+      params.gir || '',
+      params.putts || '',
+      params.notes || '',
+      params.source || '',
+    ].join('|');
+    if (key === appliedPrefillKeyRef.current) return;
+    // Nothing meaningful to prefill — treat as "no incoming intent" and
+    // don't touch the form (so the (×) reset survives tab switches).
+    if (!params.course && !params.score && !params.notes) {
+      appliedPrefillKeyRef.current = key;
+      return;
+    }
+    appliedPrefillKeyRef.current = key;
     applyPrefill();
-  }, [applyPrefill]);
+    // Drop the params from the route so switching tabs & coming back
+    // doesn't re-hydrate a stale prefill.
+    router.setParams({
+      course: undefined,
+      score: undefined,
+      par: undefined,
+      holes: undefined,
+      fairways: undefined,
+      gir: undefined,
+      putts: undefined,
+      notes: undefined,
+      source: undefined,
+    } as any);
+  }, [
+    params.course,
+    params.score,
+    params.par,
+    params.holes,
+    params.fairways,
+    params.gir,
+    params.putts,
+    params.notes,
+    params.source,
+    applyPrefill,
+    router,
+  ]);
 
   // Auto-recompute Par whenever the selected course's detail, hole-count, or
   // front/back-9 choice changes — unless the user has since hand-edited Par.
