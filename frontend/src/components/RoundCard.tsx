@@ -12,6 +12,7 @@ import { useTheme } from '@/src/theme-context';
 import { MentionText } from '@/src/components/MentionText';
 import { MentionInput } from '@/src/components/MentionInput';
 import { LikersSheet } from '@/src/components/LikersSheet';
+import { LfgJoinButton, lfgSpotsLabel } from '@/src/components/LfgJoinButton';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth-context';
 
@@ -67,6 +68,11 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
+  // Local overlay for LFG interest state — kept card-local so a quick "I'm
+  // in!" tap from the feed doesn't require plumbing round updates through
+  // every screen that renders a RoundCard (feed/profile/discover).
+  const [lfgPatch, setLfgPatch] = useState<any>(null);
+  const displayRound = lfgPatch ? { ...round, ...lfgPatch } : round;
 
   const openCourse = () => {
     Haptics.selectionAsync().catch(() => {});
@@ -238,15 +244,19 @@ export function RoundCard({ round, onLike, onDeleted }: Props) {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.lfgTitle}>Looking for Group</Text>
             <Text style={styles.lfgSub} numberOfLines={2}>
-              {[
-                round.meetup_date,
-                round.looking_for_count ? `Need ${round.looking_for_count} more` : null,
-              ]
-                .filter(Boolean)
-                .join(' \u00b7 ') || 'Reply below if you\u2019re in.'}
+              {[round.meetup_date, lfgSpotsLabel(displayRound)].filter(Boolean).join(' \u00b7 ') ||
+                'Reply below if you\u2019re in.'}
             </Text>
           </View>
         </View>
+      ) : null}
+
+      {isLfg && !isOwn ? (
+        <LfgJoinButton
+          round={displayRound}
+          compact
+          onUpdate={(patch) => setLfgPatch((prev: any) => ({ ...(prev || {}), ...patch }))}
+        />
       ) : null}
 
       {/* Where an LFG post is playing, if the author tagged a course */}

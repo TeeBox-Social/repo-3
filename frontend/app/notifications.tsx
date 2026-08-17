@@ -11,6 +11,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { colors, radius, shadow, spacing } from '@/src/theme';
 import { makeThemedSheet } from '@/src/theme';
 import { useTheme } from '@/src/theme-context';
@@ -25,6 +26,11 @@ type Notification = {
   created_at: string;
   course_name?: string;
   reason?: string;
+  round_id?: string;
+  comment_id?: string;
+  actor_id?: string;
+  actor_name?: string;
+  achievement_key?: string;
 };
 
 function iconForType(type: string): { icon: any; color: string } {
@@ -45,8 +51,34 @@ function iconForType(type: string): { icon: any; color: string } {
       return { icon: 'alert-circle', color: '#c0392b' };
     case 'course_verified':
       return { icon: 'checkmark-done', color: colors.brandPrimary };
+    case 'lfg_interest':
+      return { icon: 'hand-right', color: colors.brandPrimary };
+    case 'lfg_response':
+      return { icon: 'people', color: colors.brandPrimary };
     default:
       return { icon: 'notifications', color: colors.brandPrimary };
+  }
+}
+
+/** Where tapping a notification should take the user, based on its type. */
+function resolveNotificationTarget(n: Notification): string | null {
+  switch (n.type) {
+    case 'post_like':
+    case 'post_comment':
+    case 'comment_like':
+    case 'mention':
+    case 'achievement_unlocked':
+    case 'lfg_interest':
+    case 'lfg_response':
+      // Achievements are earned by a specific round, so jump straight to it.
+      return n.round_id ? `/post/${n.round_id}` : null;
+    case 'follow':
+      return n.actor_id ? `/user/${n.actor_id}` : null;
+    case 'course_verified':
+      return n.course_name ? `/course/${encodeURIComponent(n.course_name)}` : null;
+    default:
+      // e.g. course_rejected — the course record no longer exists to open.
+      return null;
   }
 }
 
@@ -84,6 +116,16 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   };
 
+  const onPressNotification = (n: Notification) => {
+    Haptics.selectionAsync().catch(() => {});
+    if (!n.read) {
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+      api.markNotificationRead(n.id).catch(() => {});
+    }
+    const target = resolveNotificationTarget(n);
+    if (target) router.push(target as any);
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -114,8 +156,15 @@ export default function NotificationsScreen() {
         >
           {items.map((n) => {
             const meta = iconForType(n.type);
+            const target = resolveNotificationTarget(n);
             return (
-              <View key={n.id} style={[styles.card, !n.read && styles.cardUnread]} testID={`notif-${n.id}`}>
+              <Pressable
+                key={n.id}
+                testID={`notif-${n.id}`}
+                onPress={() => onPressNotification(n)}
+                disabled={!target}
+                style={[styles.card, !n.read && styles.cardUnread]}
+              >
                 <View style={styles.iconWrap}>
                   <Ionicons name={meta.icon} size={22} color={meta.color} />
                 </View>
@@ -125,7 +174,10 @@ export default function NotificationsScreen() {
                   <Text style={styles.cardTime}>{new Date(n.created_at).toLocaleDateString()}</Text>
                 </View>
                 {!n.read ? <View style={styles.unreadDot} /> : null}
-              </View>
+                {target ? (
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} style={{ marginLeft: 2, alignSelf: 'center' }} />
+                ) : null}
+              </Pressable>
             );
           })}
         </ScrollView>

@@ -258,21 +258,6 @@ export default function Profile() {
         </Pressable>
       ) : null}
 
-      <Pressable
-        testID="profile-notif-settings"
-        onPress={() => router.push('/profile/notifications' as any)}
-        style={styles.settingsCard}
-      >
-        <View style={styles.settingsIcon}>
-          <Ionicons name="notifications-outline" size={20} color={colors.brandPrimary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.settingsTitle}>Notification settings</Text>
-          <Text style={styles.settingsSub}>Choose which alerts you receive.</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.muted} />
-      </Pressable>
-
       {achievements && achievements.achievements ? (
         (() => {
           const all = achievements.achievements as any[];
@@ -529,27 +514,6 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
   },
   adminTitle: { fontSize: 15, fontWeight: '800', color: colors.onBrandTertiary },
   adminSub: { fontSize: 12, color: colors.onBrandTertiary, opacity: 0.8, marginTop: 2 },
-  settingsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surfaceSecondary,
-    ...shadow.soft,
-  },
-  settingsIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.brandTertiary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsTitle: { fontSize: 15, fontWeight: '800', color: colors.onSurface },
-  settingsSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
   pinBadge: {
     flexDirection: 'row',

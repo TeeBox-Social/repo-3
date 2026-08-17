@@ -25,6 +25,8 @@ export type NotificationPrefs = {
   mention: boolean;
   follow: boolean;
   course_verified: boolean;
+  lfg_interest: boolean;
+  lfg_response: boolean;
 };
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -35,6 +37,8 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   mention: true,
   follow: true,
   course_verified: true,
+  lfg_interest: true,
+  lfg_response: true,
 };
 
 export type ImportJob = {
@@ -311,11 +315,43 @@ export const api = {
 
   // ---- Notifications ----
   listNotifications: () =>
-    request<{ notifications: Array<{ id: string; type: string; title: string; body: string; read: boolean; created_at: string; course_name?: string; reason?: string }>; unread: number }>('/notifications'),
+    request<{ notifications: Array<{
+      id: string; type: string; title: string; body: string; read: boolean; created_at: string;
+      course_name?: string; reason?: string; round_id?: string; comment_id?: string;
+      actor_id?: string; actor_name?: string; achievement_key?: string; interest_id?: string;
+    }>; unread: number }>('/notifications'),
   markNotificationRead: (id: string) =>
     request<{ ok: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request<{ ok: boolean }>('/notifications/read-all', { method: 'POST' }),
+
+  // ---- LFG: "I'm in!" join requests ----
+  lfgToggleInterest: (roundId: string) =>
+    request<{
+      status: 'pending' | null;
+      interest_id: string | null;
+      lfg_accepted_count: number;
+      lfg_pending_count: number;
+      lfg_spots_remaining: number | null;
+    }>(`/rounds/${roundId}/lfg/interest`, { method: 'POST' }),
+  lfgListInterests: (roundId: string) =>
+    request<Array<{
+      id: string;
+      round_id: string;
+      user_id: string;
+      status: 'pending' | 'accepted' | 'declined';
+      created_at: string;
+      responded_at?: string;
+      user?: { id: string; display_name: string; avatar?: string | null };
+    }>>(`/rounds/${roundId}/lfg/interests`),
+  lfgRespond: (roundId: string, interestId: string, accept: boolean) =>
+    request<{
+      ok: boolean;
+      status: 'accepted' | 'declined';
+      lfg_accepted_count: number;
+      lfg_pending_count: number;
+      lfg_spots_remaining: number | null;
+    }>(`/rounds/${roundId}/lfg/interests/${interestId}/${accept ? 'accept' : 'decline'}`, { method: 'POST' }),
 
   // ---- Admin: pending courses ----
   adminListPendingCourses: () =>

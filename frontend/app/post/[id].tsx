@@ -24,6 +24,8 @@ import { MentionInput } from '@/src/components/MentionInput';
 import { MentionText } from '@/src/components/MentionText';
 import { LikersSheet } from '@/src/components/LikersSheet';
 import { HoleGrid } from '@/src/components/HoleGrid';
+import { LfgJoinButton, lfgSpotsLabel } from '@/src/components/LfgJoinButton';
+import { LfgRequestsSheet } from '@/src/components/LfgRequestsSheet';
 import { useAuth } from '@/src/auth-context';
 
 export default function PostDetail() {
@@ -44,6 +46,7 @@ export default function PostDetail() {
     | { kind: 'comment'; roundId: string; commentId: string }
     | null
   >(null);
+  const [requestsOpen, setRequestsOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -254,15 +257,32 @@ export default function PostDetail() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.lfgTitle}>Looking for Group</Text>
                   <Text style={styles.lfgSub}>
-                    {[
-                      round.meetup_date,
-                      round.looking_for_count ? `Need ${round.looking_for_count} more` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' \u00b7 ') || 'Reply below if you\u2019re in.'}
+                    {[round.meetup_date, lfgSpotsLabel(round)].filter(Boolean).join(' \u00b7 ') ||
+                      'Reply below if you\u2019re in.'}
                   </Text>
                 </View>
               </View>
+            ) : null}
+
+            {isLfg ? (
+              user && round.author?.id === user.id ? (
+                <Pressable
+                  testID="post-lfg-manage"
+                  onPress={() => setRequestsOpen(true)}
+                  style={styles.lfgManageBtn}
+                >
+                  <Ionicons name="people-outline" size={18} color={colors.brandPrimary} />
+                  <Text style={styles.lfgManageBtnText}>
+                    Manage requests{round.lfg_pending_count ? ` \u00b7 ${round.lfg_pending_count} new` : ''}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                </Pressable>
+              ) : (
+                <LfgJoinButton
+                  round={round}
+                  onUpdate={(patch) => setRound((prev: any) => (prev ? { ...prev, ...patch } : prev))}
+                />
+              )
             ) : null}
 
             {isRound && (round.fairways_hit != null || round.greens_in_regulation != null || round.putts != null) ? (
@@ -404,6 +424,15 @@ export default function PostDetail() {
         fetchRoundLikers={api.getRoundLikers}
         fetchCommentLikers={api.getCommentLikers}
       />
+
+      {isLfg ? (
+        <LfgRequestsSheet
+          visible={requestsOpen}
+          onClose={() => setRequestsOpen(false)}
+          roundId={String(id)}
+          onCountsChange={(patch) => setRound((prev: any) => (prev ? { ...prev, ...patch } : prev))}
+        />
+      ) : null}
     </View>
   );
 }
@@ -706,6 +735,17 @@ const styles = makeThemedSheet((colors: any) => StyleSheet.create({
     textTransform: 'uppercase',
   },
   lfgSub: { fontSize: 15, fontWeight: '700', color: '#7A4E00', marginTop: 2, lineHeight: 20 },
+  lfgManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    ...shadow.soft,
+  },
+  lfgManageBtnText: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.onSurface },
   miniStatPill: {
     flexDirection: 'row',
     alignItems: 'baseline',

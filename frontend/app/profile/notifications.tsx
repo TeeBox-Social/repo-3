@@ -68,6 +68,18 @@ const ROWS: PrefRow[] = [
     desc: 'When a course you submitted is approved (or rejected).',
     icon: 'checkmark-done-outline',
   },
+  {
+    key: 'lfg_interest',
+    title: 'Join requests',
+    desc: 'When a golfer says they\u2019re in for your Looking for Group round.',
+    icon: 'hand-right-outline',
+  },
+  {
+    key: 'lfg_response',
+    title: 'Join responses',
+    desc: 'When an organizer accepts or declines your join request.',
+    icon: 'people-outline',
+  },
 ];
 
 export default function NotificationSettings() {

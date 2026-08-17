@@ -246,7 +246,13 @@ async def get_user_by_name(display_name: str, user=Depends(get_current_user)):
 
 @router.get("/users/{user_id}/achievements")
 async def get_achievements(user_id: str, user=Depends(get_current_user)):
-    rounds = [r async for r in rounds_col.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1)]
+    # Only scored "round" posts count towards achievements — text/LFG posts
+    # are excluded (see compute_achievement_defs for the underlying bug fix).
+    rounds = [
+        r async for r in rounds_col.find(
+            {"user_id": user_id, "post_type": {"$in": ["round", None]}}, {"_id": 0},
+        ).sort("created_at", 1)
+    ]
     defs = compute_achievement_defs(rounds)
     return {
         "total": sum(1 for d in defs if d["earned"]),

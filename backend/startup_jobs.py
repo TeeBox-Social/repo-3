@@ -21,6 +21,7 @@ from db import (
     courses_col,
     follows_col,
     import_jobs_col,
+    lfg_interests_col,
     likes_col,
     notifications_col,
     refresh_tokens_col,
@@ -92,7 +93,11 @@ async def ensure_indexes() -> None:
         # Reviews: queried by course_name for aggregations
         await reviews_col.create_index("course_name")
         await reviews_col.create_index([("course_name", 1), ("created_at", -1)])
-        
+
+        # LFG interests: one request per (round, user); organizer status lookups
+        await lfg_interests_col.create_index([("round_id", 1), ("user_id", 1)], unique=True)
+        await lfg_interests_col.create_index([("round_id", 1), ("status", 1)])
+
         logger.info("All database indexes created/verified successfully")
     except Exception as e:
         logger.warning(f"index setup skipped: {e}")

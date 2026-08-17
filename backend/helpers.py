@@ -18,6 +18,7 @@ from config import NOTIFICATION_PREF_KEYS
 from db import (
     comments_col,
     courses_col,
+    lfg_interests_col,
     likes_col,
     notifications_col,
     users_col,
@@ -253,6 +254,27 @@ async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Option
                 name_by_id[u["id"]] = u.get("display_name")
             like_names = [name_by_id[i] for i in recent_ids if name_by_id.get(i)]
 
+    # ---- Looking-for-Group enrichment (only for lfg posts) ----
+    lfg_extra: dict = {}
+    if r.get("post_type") == "lfg":
+        accepted_count = await lfg_interests_col.count_documents({"round_id": round_id, "status": "accepted"})
+        pending_count = await lfg_interests_col.count_documents({"round_id": round_id, "status": "pending"})
+        looking_for = r.get("looking_for_count")
+        spots_remaining = max(0, looking_for - accepted_count) if looking_for else None
+        my_interest = None
+        if viewer_id:
+            mi = await lfg_interests_col.find_one(
+                {"round_id": round_id, "user_id": viewer_id}, {"_id": 0, "id": 1, "status": 1},
+            )
+            if mi:
+                my_interest = {"id": mi["id"], "status": mi["status"]}
+        lfg_extra = {
+            "lfg_accepted_count": accepted_count,
+            "lfg_pending_count": pending_count,
+            "lfg_spots_remaining": spots_remaining,
+            "lfg_my_interest": my_interest,
+        }
+
     return {
         **r,
         "author": {
@@ -266,13 +288,26 @@ async def enrich_round(r: dict, viewer_id: Optional[str], like_count_map: Option
         "comment_count": comment_count,
         "liked_by_me": liked_by_me,
         "new_achievements": r.get("new_achievements") or [],
+        **lfg_extra,
     }
 
 
 # ---- Achievements ----
 def compute_achievement_defs(rounds: List[dict]) -> List[dict]:
-    """Compute the ordered list of achievement definitions with ``earned`` flags."""
-    rounds_sorted = sorted(rounds, key=lambda r: r.get("created_at") or "")
+    """Compute the ordered list of achievement definitions with ``earned`` flags.
+
+    BUG FIX: only actual scored "round" posts are eligible — "text"/"lfg" posts
+    carry a default ``holes_played`` but no ``total_score``, which used to blow
+    up the ``s < 100`` comparisons below with a `None` value (crashing this
+    function -> 500 on /users/{id}/achievements -> the whole Achievements
+    section silently vanishing from the profile page). Filtering defensively
+    here protects every caller, regardless of whether they pre-filtered.
+    """
+    eligible = [
+        r for r in rounds
+        if r.get("post_type") in (None, "round") and r.get("total_score") is not None
+    ]
+    rounds_sorted = sorted(eligible, key=lambda r: r.get("created_at") or "")
     rounds_18 = [r for r in rounds_sorted if int(r.get("holes_played") or 18) >= 18]
     rounds_9 = [r for r in rounds_sorted if int(r.get("holes_played") or 18) == 9]
     scores_18 = [r["total_score"] for r in rounds_18]

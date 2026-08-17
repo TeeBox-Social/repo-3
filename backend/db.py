@@ -21,3 +21,4 @@ refresh_tokens_col = db.refresh_tokens
 wishlists_col = db.wishlists
 import_jobs_col = db.import_jobs
 notifications_col = db.notifications
+lfg_interests_col = db.lfg_interests
